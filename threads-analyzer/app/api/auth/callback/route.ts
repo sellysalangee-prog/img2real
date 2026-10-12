@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { cookieOptions, seal, SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
-import { exchangeCode } from "@/lib/threads";
+import { cookieOptions, saveAccount, sealSession, SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
+import { exchangeCode, getProfile } from "@/lib/threads";
 
 export async function GET(req: NextRequest) {
   const home = new URL("/", env.appUrl());
@@ -18,10 +18,16 @@ export async function GET(req: NextRequest) {
   if (!state || state !== req.cookies.get(STATE_COOKIE)?.value) return fail("보안 확인에 실패했습니다. 다시 시도해 주세요.");
 
   try {
-    const session = await exchangeCode(code);
+    const token = await exchangeCode(code);
+    const profile = await getProfile(token.accessToken);
+    await saveAccount({ ...profile, id: token.userId }, token);
+
     const res = NextResponse.redirect(home);
     res.cookies.delete(STATE_COOKIE);
-    res.cookies.set(SESSION_COOKIE, seal(session), { ...cookieOptions, expires: new Date(session.expiresAt) });
+    res.cookies.set(SESSION_COOKIE, sealSession({ userId: token.userId, expiresAt: token.expiresAt }), {
+      ...cookieOptions,
+      expires: new Date(token.expiresAt),
+    });
     return res;
   } catch (e) {
     return fail(e instanceof Error ? e.message : "토큰 발급에 실패했습니다.");

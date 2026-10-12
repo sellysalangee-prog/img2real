@@ -9,6 +9,8 @@
   --good: #1f9d63;
   --bad: #d4513d;
   --warn: #d79a22;
+  --warn-bg: #fff6e0;
+  --good-bg: #e8f7ef;
   --radius: 16px;
   color-scheme: light;
 }
@@ -25,6 +27,8 @@
     --good: #4cc98c;
     --bad: #ff7a66;
     --warn: #f0b84a;
+    --warn-bg: #2e2617;
+    --good-bg: #16291f;
     color-scheme: dark;
   }
 }
@@ -206,7 +210,13 @@ p {
 }
 
 .controls {
-  padding: 8px 16px;
+  padding: 12px 16px 4px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.grow {
+  flex: 1;
 }
 .segmented {
   display: grid;
@@ -217,7 +227,8 @@ p {
   gap: 4px;
 }
 .segmented button,
-.tabs button {
+.tabs button,
+.subtabs button {
   border: 0;
   background: transparent;
   font: inherit;
@@ -255,6 +266,20 @@ p {
 .tabs button[aria-selected="true"] {
   color: var(--text);
   border-bottom-color: var(--text);
+}
+
+.subtabs {
+  display: flex;
+  gap: 16px;
+  padding: 4px 16px 0;
+}
+.subtabs button {
+  padding: 8px 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.subtabs button[aria-selected="true"] {
+  color: var(--accent);
 }
 
 .content {
@@ -589,4 +614,311 @@ select {
   .skeleton {
     animation: none;
   }
+}
+
+/* ---------- 입력 ---------- */
+textarea,
+input[type="text"],
+input[type="search"],
+input:not([type]) {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+textarea:focus,
+input:focus,
+select:focus {
+  outline: 2px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  outline-offset: 1px;
+}
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+.link-btn.danger,
+.danger {
+  color: var(--bad);
+}
+.btn.danger-ghost {
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid color-mix(in oklab, var(--bad) 40%, transparent);
+  align-self: center;
+}
+.right {
+  margin-left: auto;
+}
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* ---------- 댓글함 ---------- */
+.toolbar {
+  display: flex;
+}
+.sync-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.notice {
+  background: color-mix(in oklab, var(--accent) 10%, var(--card));
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.context {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.comment-text {
+  white-space: pre-wrap;
+  font-size: 17px;
+  margin: 2px 0 0;
+}
+.pcard {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.pcard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pcard p {
+  margin: 0;
+}
+.pcard-notes {
+  margin-top: 6px !important;
+}
+.chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font-size: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.chip-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+.chip.cat-life {
+  border-color: color-mix(in oklab, var(--good) 45%, var(--line));
+}
+.chip.cat-recent {
+  border-color: color-mix(in oklab, var(--warn) 55%, var(--line));
+}
+.chip.cat-interest {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line));
+}
+.reply-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reply-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ok-msg {
+  margin: 0;
+  background: var(--good-bg);
+  color: var(--good);
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.check {
+  background: var(--warn-bg);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 15px;
+}
+.check-title {
+  font-weight: 800;
+  color: var(--warn);
+}
+.check ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.check li p {
+  margin: 0 0 2px;
+}
+.check li {
+  margin-bottom: 8px;
+}
+.quote {
+  font-weight: 700;
+}
+.revised {
+  background: var(--card);
+  border-radius: 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
+/* ---------- 사람 ---------- */
+.search {
+  background: var(--card) !important;
+}
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.person-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.person-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.person-row p {
+  margin: 4px 0 0;
+}
+.person-facts {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fact-group {
+  margin-top: 8px;
+}
+.fact-group h4 {
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.fact {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.fact.past {
+  opacity: 0.6;
+}
+.fact.past .fact-value {
+  text-decoration: line-through;
+}
+.fact-main {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.fact-label {
+  flex-shrink: 0;
+  min-width: 64px;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.fact-value {
+  font-weight: 600;
+}
+.fact-input {
+  padding: 6px 10px !important;
+}
+.fact-source {
+  margin: 2px 0 0 74px;
+}
+.fact-actions {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0 0 74px;
+}
+.add-fact {
+  margin-top: 12px;
+}
+.add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.convo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.convo-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.convo-post {
+  margin: 0;
+}
+.bubble {
+  max-width: 85%;
+  background: var(--bg);
+  border-radius: 14px 14px 14px 4px;
+  padding: 8px 12px;
+}
+.bubble.mine {
+  align-self: flex-end;
+  background: color-mix(in oklab, var(--accent) 16%, var(--card));
+  border-radius: 14px 14px 4px 14px;
+}
+.bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.content > .link-btn {
+  align-self: flex-start;
 }

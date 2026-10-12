@@ -1,9 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engagementRate } from "@/lib/analysis";
-import { getSession } from "@/lib/session";
+import { jsonError, readJson, withAccount } from "@/lib/api";
+import { askStructured } from "@/lib/claude";
 import { getReplies } from "@/lib/threads";
 import type { Post } from "@/lib/types";
 
@@ -65,57 +64,26 @@ function line(p: Post): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Threads 계정을 다시 연결해 주세요." }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." }, { status: 500 });
-
-  const parsed = RequestSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
+  const parsed = RequestSchema.safeParse(await readJson(req));
+  if (!parsed.success) return jsonError("요청 형식이 올바르지 않습니다.", 400);
   const posts = parsed.data.posts;
-  if (posts.length < 3) return NextResponse.json({ error: "분석하려면 게시글이 3개 이상 필요합니다." }, { status: 400 });
+  if (posts.length < 3) return jsonError("분석하려면 게시글이 3개 이상 필요합니다.", 400);
 
-  // 답글이 많은 글 위주로 답글 본문을 가져옵니다.
-  const replyTargets = [...posts].sort((a, b) => b.metrics.replies - a.metrics.replies).filter((p) => p.metrics.replies > 0).slice(0, 8);
-  const replies = (await Promise.all(replyTargets.map((p) => getReplies(session.accessToken, p.id, 20)))).flat();
+  return withAccount(async (account) => {
+    // 답글이 많은 글 위주로 답글 본문을 가져옵니다.
+    const replyTargets = [...posts].sort((a, b) => b.metrics.replies - a.metrics.replies).filter((p) => p.metrics.replies > 0).slice(0, 8);
+    const replies = (await Promise.all(replyTargets.map((p) => getReplies(account.token, p.id, 20)))).flat();
 
-  const ranked = [...posts].sort((a, b) => (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1));
-  const prompt = [
-    `분석 대상 게시글 ${posts.length}개 (참여율 높은 순)`,
-    ranked.map(line).join("\n\n---\n\n"),
-    `\n\n내 글에 달린 답글 샘플 ${replies.length}개`,
-    replies.map((r) => `- ${r.text.slice(0, 200)}`).join("\n") || "(답글 없음)",
-    "\n\n위 데이터를 바탕으로 분석 결과를 작성해 주세요.",
-  ].join("\n");
+    const ranked = [...posts].sort((a, b) => (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1));
+    const prompt = [
+      `분석 대상 게시글 ${posts.length}개 (참여율 높은 순)`,
+      ranked.map(line).join("\n\n---\n\n"),
+      `\n\n내 글에 달린 답글 샘플 ${replies.length}개`,
+      replies.map((r) => `- ${r.text.slice(0, 200)}`).join("\n") || "(답글 없음)",
+      "\n\n위 데이터를 바탕으로 분석 결과를 작성해 주세요.",
+    ].join("\n");
 
-  const client = new Anthropic();
-  try {
-    const response = await client.beta.messages.parse({
-      model: "claude-opus-5-5",
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "high", format: betaZodOutputFormat(InsightSchema) },
-      system: SYSTEM,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    if (response.stop_reason === "refusal") {
-      return NextResponse.json({ error: "AI가 이 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 502 });
-    }
-    if (!response.parsed_output) {
-      return NextResponse.json({ error: "AI 응답을 해석하지 못했습니다. 다시 시도해 주세요." }, { status: 502 });
-    }
-    return NextResponse.json(response.parsed_output);
-  } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) {
-      return NextResponse.json({ error: "요청이 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
-    }
-    if (e instanceof Anthropic.AuthenticationError) {
-      return NextResponse.json({ error: "Claude API 키가 올바르지 않습니다." }, { status: 500 });
-    }
-    if (e instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: `AI 분석 오류 (${e.status ?? "연결"}): ${e.message}` }, { status: 502 });
-    }
-    throw e;
-  }
+    const result = await askStructured({ schema: InsightSchema, system: SYSTEM, prompt, effort: "high" });
+    return NextResponse.json(result);
+  });
 }

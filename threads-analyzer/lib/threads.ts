@@ -1,14 +1,20 @@
 import { env, REDIRECT_PATH } from "./env";
-import type { Session } from "./session";
 import type { DailyPoint, Post, PostMetrics, Profile, Reply } from "./types";
 
 const GRAPH = "https://graph.threads.net";
 const API = `${GRAPH}/v1.0`;
-const SCOPES = ["threads_basic", "threads_manage_insights", "threads_read_replies"];
+const SCOPES = [
+  "threads_basic",
+  "threads_manage_insights",
+  "threads_read_replies",
+  "threads_content_publish",
+  "threads_manage_replies",
+];
 const POST_METRICS = ["views", "likes", "replies", "reposts", "quotes", "shares"] as const;
 // Threads가 사용자 인사이트에 허용하는 가장 이른 시각 (2024-04-13)
 const EARLIEST_INSIGHTS_TS = 1712991600;
-const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type TokenSet = { userId: string; accessToken: string; issuedAt: number; expiresAt: number };
 
 export class ThreadsError extends Error {
   constructor(message: string, readonly status: number, readonly code?: number) {
@@ -51,7 +57,7 @@ export function authorizeUrl(state: string): string {
 }
 
 /** 인가 코드 → 단기 토큰 → 장기 토큰(60일) */
-export async function exchangeCode(code: string): Promise<Session> {
+export async function exchangeCode(code: string): Promise<TokenSet> {
   const short = await call<{ access_token: string; user_id: string | number }>(`${GRAPH}/oauth/access_token`, {
     method: "POST",
     body: new URLSearchParams({
@@ -79,19 +85,13 @@ export async function exchangeCode(code: string): Promise<Session> {
   };
 }
 
-/** 만료 7일 전부터 토큰을 갱신합니다. 발급 후 24시간이 지나야 갱신할 수 있습니다. */
-export async function refreshIfNeeded(session: Session): Promise<Session | null> {
+/** 장기 토큰을 60일 연장합니다. 발급 후 24시간이 지나야 갱신할 수 있습니다. */
+export async function refreshToken(token: string): Promise<Omit<TokenSet, "userId">> {
+  const res = await call<{ access_token: string; expires_in: number }>(
+    withToken(`${GRAPH}/refresh_access_token`, token, { grant_type: "th_refresh_token" }),
+  );
   const now = Date.now();
-  if (session.expiresAt - now > 7 * DAY_MS || now - session.issuedAt < DAY_MS) return null;
-  try {
-    const res = await call<{ access_token: string; expires_in: number }>(
-      withToken(`${GRAPH}/refresh_access_token`, session.accessToken, { grant_type: "th_refresh_token" }),
-    );
-    return { ...session, accessToken: res.access_token, issuedAt: now, expiresAt: now + res.expires_in * 1000 };
-  } catch {
-    // 갱신에 실패해도 기존 토큰이 살아 있으면 계속 사용합니다.
-    return null;
-  }
+  return { accessToken: res.access_token, issuedAt: now, expiresAt: now + res.expires_in * 1000 };
 }
 
 // ---------- 데이터 ----------
@@ -207,4 +207,76 @@ export async function getReplies(token: string, postId: string, limit = 25): Pro
   } catch {
     return [];
   }
+}
+
+// ---------- 댓글 수집과 답글 게시 ----------
+
+export type RawPostSummary = { id: string; text: string; permalink: string | null; timestamp: string };
+
+/** 최근 days일 안에 올린 내 글 (리포스트 제외) */
+export async function getRecentPosts(token: string, days: number, max = 50): Promise<RawPostSummary[]> {
+  const since = Math.floor((Date.now() - days * 86400_000) / 1000);
+  const out: RawPostSummary[] = [];
+  let url: string | undefined = withToken("/me/threads", token, {
+    fields: "id,text,media_type,timestamp,permalink",
+    since,
+    limit: Math.min(max, 100),
+  });
+  while (url && out.length < max) {
+    const page: Paged<RawPost> = await call<Paged<RawPost>>(url);
+    for (const p of page.data) {
+      if (p.media_type !== "REPOST_FACADE") out.push({ id: p.id, text: p.text ?? "", permalink: p.permalink ?? null, timestamp: p.timestamp });
+    }
+    url = page.data.length ? page.paging?.next : undefined;
+  }
+  return out.slice(0, max);
+}
+
+export type RawReply = {
+  id: string;
+  text?: string;
+  username?: string;
+  timestamp: string;
+  permalink?: string;
+  root_post?: { id: string };
+  replied_to?: { id: string };
+  is_reply_owned_by_me?: boolean;
+  hide_status?: string;
+};
+
+/** 글에 달린 모든 댓글과 대댓글 (내 답글 포함) */
+export async function getConversation(token: string, postId: string, max = 300): Promise<RawReply[]> {
+  const out: RawReply[] = [];
+  let url: string | undefined = withToken(`/${postId}/conversation`, token, {
+    fields: "id,text,username,timestamp,permalink,root_post,replied_to,is_reply_owned_by_me,hide_status",
+    reverse: "false",
+    limit: 100,
+  });
+  while (url && out.length < max) {
+    const page: Paged<RawReply> = await call<Paged<RawReply>>(url);
+    out.push(...page.data);
+    url = page.data.length ? page.paging?.next : undefined;
+  }
+  return out;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 댓글에 답글을 올립니다. 컨테이너를 만든 뒤 게시하며, 처리 중이면 잠시 후 다시 시도합니다. */
+export async function publishReply(token: string, replyToId: string, text: string): Promise<string> {
+  const container = await call<{ id: string }>(withToken("/me/threads", token, { media_type: "TEXT", text, reply_to_id: replyToId }), {
+    method: "POST",
+  });
+  let lastError: unknown;
+  for (const wait of [0, 2000, 5000, 10000]) {
+    if (wait) await sleep(wait);
+    try {
+      const published = await call<{ id: string }>(withToken("/me/threads_publish", token, { creation_id: container.id }), { method: "POST" });
+      return published.id;
+    } catch (e) {
+      lastError = e;
+      if (e instanceof ThreadsError && e.isAuthError) break;
+    }
+  }
+  throw lastError;
 }

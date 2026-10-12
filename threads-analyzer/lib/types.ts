@@ -44,3 +44,76 @@ export type AiInsight = {
   replyMood: { positive: number; negative: number; question: number; note: string };
   nextIdeas: { title: string; why: string }[];
 };
+
+// ---------- 인물 기억 ----------
+
+export type FactCategoryKey = "basic" | "life" | "interest" | "recent" | "other";
+
+export type Fact = {
+  id: string;
+  category: FactCategoryKey;
+  label: string;
+  value: string;
+  /** 근거가 된 댓글 내용 */
+  sourceText: string | null;
+  statedAt: string | null;
+  status: "current" | "past";
+  origin: "ai" | "user";
+};
+
+export type PersonCard = {
+  id: string;
+  username: string;
+  notes: string;
+  forgotten: boolean;
+  commentCount: number;
+  facts: Fact[];
+};
+
+export type InboxItem = {
+  id: string;
+  text: string;
+  createdAt: string;
+  permalink: string | null;
+  status: "open" | "replied" | "dismissed";
+  post: { text: string; permalink: string | null };
+  /** 이 댓글이 내 답글에 단 것이면 그 내 답글 내용 */
+  myParentText: string | null;
+  person: PersonCard | null;
+};
+
+export type PersonSummary = {
+  id: string;
+  username: string;
+  notes: string;
+  lastSeenAt: string;
+  commentCount: number;
+  openCount: number;
+  facts: Fact[];
+};
+
+export type ConversationItem = {
+  id: string;
+  text: string;
+  createdAt: string;
+  isMine: boolean;
+  postId: string;
+  postText: string;
+  permalink: string | null;
+};
+
+export type PersonDetail = {
+  id: string;
+  username: string;
+  notes: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  facts: Fact[];
+  conversation: ConversationItem[];
+};
+
+export type CheckResult = {
+  verdict: "ok" | "caution";
+  issues: { quote: string; problem: string; suggestion: string }[];
+  revised: string;
+};
