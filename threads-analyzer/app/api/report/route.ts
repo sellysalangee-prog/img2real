@@ -15,12 +15,13 @@ export async function GET() {
   return withAccount(async (account) => {
     const sql = await db();
     const [[report], [settings]] = await Promise.all([
-      sql<{ data: unknown; created_at: Date }[]>`SELECT data, created_at FROM reports WHERE account_id = ${account.id} ORDER BY created_at DESC LIMIT 1`,
+      sql<{ id: string; data: Record<string, unknown> }[]>`
+        SELECT id::text AS id, data FROM reports WHERE account_id = ${account.id} ORDER BY created_at DESC LIMIT 1`,
       sql<{ tag_model: string; tagged: number }[]>`
         SELECT a.tag_model, (SELECT count(*)::int FROM post_tags t WHERE t.account_id = a.id) AS tagged
         FROM accounts a WHERE a.id = ${account.id}`,
     ]);
-    return NextResponse.json({ report: report?.data ?? null, tagModel: settings.tag_model, tagged: settings.tagged });
+    return NextResponse.json({ report: report ? { ...report.data, id: report.id } : null, tagModel: settings.tag_model, tagged: settings.tagged });
   });
 }
 
@@ -51,12 +52,13 @@ export async function POST(req: Request) {
     }
 
     const [{ tag_model }] = await sql<{ tag_model: string }[]>`SELECT tag_model FROM accounts WHERE id = ${account.id}`;
-    const data = { createdAt: new Date().toISOString(), days, tagModel: tag_model, stats, advice, adviceError, aiCostUsd };
-    await sql`INSERT INTO reports (account_id, data) VALUES (${account.id}, ${sql.json(data as never)})`;
+    const data = { createdAt: new Date().toISOString(), days, tagModel: tag_model, stats, advice, adviceError, aiCostUsd, explanations: {} };
+    const [{ id }] = await sql<{ id: string }[]>`
+      INSERT INTO reports (account_id, data) VALUES (${account.id}, ${sql.json(data as never)}) RETURNING id::text AS id`;
     // 오래된 리포트는 최근 10개만 남깁니다.
     await sql`
       DELETE FROM reports WHERE account_id = ${account.id}
         AND id NOT IN (SELECT id FROM reports WHERE account_id = ${account.id} ORDER BY created_at DESC LIMIT 10)`;
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, id });
   });
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Formula, ReportStats } from "@/lib/report";
-import type { ReportAdvice } from "@/lib/report-ai";
+import type { Explanation, ReportAdvice } from "@/lib/report-ai";
 import type { Features } from "@/lib/tagging";
 import { api, errorMessage } from "./api";
 import { date, num } from "./format";
@@ -17,6 +17,8 @@ const won = (usd: number) => `약 ${Math.max(1, Math.round(usd * KRW)).toLocaleS
 const pct = (r: number) => `${Math.round(r * 100)}%`;
 
 type ReportData = {
+  id: string;
+  explanations?: Record<string, Explanation>;
   createdAt: string;
   days: number;
   tagModel: ModelKey;
@@ -187,7 +189,11 @@ function ReportView({ report }: { report: ReportData }) {
       <section className="card">
         <h3>터지는 공식 TOP {stats.formulas.length || ""}</h3>
         {stats.formulas.length ? (
-          stats.formulas.map((f, i) => <FormulaCard key={i} rank={i + 1} f={f} byId={byId} />)
+          stats.formulas.map((f, i) => (
+            <FormulaCard key={i} rank={i + 1} f={f} byId={byId}>
+              <Explain reportId={report.id} kind="formula" index={i} cached={report.explanations?.[`formula:${i}`]} />
+            </FormulaCard>
+          ))
         ) : (
           <p className="muted empty">같은 조건으로 2번 이상 터진 조합이 아직 없어요. 글이 더 쌓이거나 터짐 기준을 낮춰 보세요.</p>
         )}
@@ -202,6 +208,7 @@ function ReportView({ report }: { report: ReportData }) {
               <p className="formula-stat">
                 {f.n}개 중 {f.hits}개 터짐 ({pct(f.rate)}) · 평소의 {f.avgMultiple.toFixed(1)}배
               </p>
+              <Explain reportId={report.id} kind="avoid" index={i} cached={report.explanations?.[`avoid:${i}`]} />
             </div>
           ))}
         </section>
@@ -293,7 +300,17 @@ function ReportView({ report }: { report: ReportData }) {
   );
 }
 
-function FormulaCard({ rank, f, byId }: { rank: number; f: Formula; byId: Map<string, ReportStats["posts"][number]> }) {
+function FormulaCard({
+  rank,
+  f,
+  byId,
+  children,
+}: {
+  rank: number;
+  f: Formula;
+  byId: Map<string, ReportStats["posts"][number]>;
+  children?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="formula">
@@ -305,6 +322,7 @@ function FormulaCard({ rank, f, byId }: { rank: number; f: Formula; byId: Map<st
         <b className="big">{pct(f.rate)}</b> {f.n}개 중 {f.hits}개 터짐 · 평소의 {f.avgMultiple.toFixed(1)}배
       </p>
       {f.shared.length > 0 && <p className="tiny muted">함께 나타난 특징: {f.shared.map((c) => `${c.label} ${c.value}`).join(", ")}</p>}
+      {children}
       <button className="link-btn tiny" onClick={() => setOpen((v) => !v)}>
         {open ? "글 접기" : "해당 글 보기"}
       </button>
@@ -321,6 +339,71 @@ function FormulaCard({ rank, f, byId }: { rank: number; f: Formula; byId: Map<st
             </p>
           ) : null;
         })}
+    </div>
+  );
+}
+
+/** 조합 하나의 원인 분석. 누를 때만 AI를 부르고, 한 번 분석한 결과는 저장돼 다시 볼 때 무료입니다. */
+function Explain({ reportId, kind, index, cached }: { reportId: string; kind: "formula" | "avoid"; index: number; cached?: Explanation }) {
+  const [result, setResult] = useState<Explanation | null>(cached ?? null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = kind === "avoid" ? "왜 안 터졌을까?" : "왜 터졌을까?";
+
+  async function run() {
+    if (result) return setOpen((v) => !v);
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await api<Explanation>("/api/report/explain", { method: "POST", json: { reportId, kind, index } }));
+      setOpen(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="explain">
+      <button className="btn ghost small explain-btn" onClick={run} disabled={busy}>
+        {busy ? "분석 중…" : result ? (open ? "분석 접기" : `${label} 분석 보기`) : `${label} 분석하기 · 약 100원`}
+      </button>
+      {error && <p className="error tiny">{error}</p>}
+      {result && open && (
+        <div className={`explain-body ${kind}`}>
+          <p className="explain-summary">{result.summary}</p>
+          <h4>{kind === "avoid" ? "안 터진 이유" : "터진 이유"}</h4>
+          <ol className="explain-list">
+            {result.reasons.map((r) => (
+              <li key={r.title}>
+                <b>{r.title}</b>
+                <p className="tiny muted">{r.evidence}</p>
+              </li>
+            ))}
+          </ol>
+          <h4>{kind === "avoid" ? "이렇게 바꿔 보세요" : "이걸 지키세요"}</h4>
+          <ul className="list good">
+            {result.actions.map((a) => (
+              <li key={a.tip}>
+                {a.tip}
+                <p className="tiny muted">예: “{a.example}”</p>
+              </li>
+            ))}
+          </ul>
+          {result.rewrite && result.originalText && (
+            <>
+              <h4>다시 쓴다면</h4>
+              <p className="tiny muted">원래 글</p>
+              <p className="rewrite before">{result.originalText.slice(0, 300)}</p>
+              <p className="tiny muted">바꾼 글</p>
+              <p className="rewrite after">{result.rewrite.improved}</p>
+            </>
+          )}
+          {result.costUsd > 0 && <p className="tiny muted">분석 비용 {won(result.costUsd)} · 다시 볼 때는 무료</p>}
+        </div>
+      )}
     </div>
   );
 }
