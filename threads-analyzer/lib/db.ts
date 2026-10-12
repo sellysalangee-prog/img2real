@@ -73,6 +73,28 @@ CREATE TABLE IF NOT EXISTS facts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS facts_person ON facts (person_id, status);
+
+-- 글 구조 태그 (글마다 한 번만 분류합니다)
+CREATE TABLE IF NOT EXISTS post_tags (
+  post_id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  tags JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS post_tags_account ON post_tags (account_id);
+
+-- 만든 리포트 (다시 열 때 비용이 들지 않도록 저장합니다)
+CREATE TABLE IF NOT EXISTS reports (
+  id BIGSERIAL PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS reports_account ON reports (account_id, created_at DESC);
+
+-- 글 분류에 쓸 모델: opus | haiku
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tag_model TEXT NOT NULL DEFAULT 'opus';
 `;
 
 function connect(): Sql {

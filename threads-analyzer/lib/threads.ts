@@ -166,6 +166,21 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
+const NO_METRICS: PostMetrics = { views: 0, likes: 0, replies: 0, reposts: 0, quotes: 0, shares: 0 };
+
+/** 지표 없이 글 목록만 가져옵니다 (지표 조회 호출을 아낍니다). */
+export async function getPostList(token: string, max: number): Promise<Post[]> {
+  return (await listPosts(token, max)).map((p) => ({
+    id: p.id,
+    text: p.text ?? "",
+    mediaType: p.media_type,
+    timestamp: p.timestamp,
+    permalink: p.permalink ?? null,
+    isQuote: Boolean(p.is_quote_post),
+    metrics: NO_METRICS,
+  }));
+}
+
 export async function getPosts(token: string, max: number): Promise<Post[]> {
   const raw = await listPosts(token, max);
   const metrics = await mapLimit(raw, 8, (p) => postMetrics(token, p.id));

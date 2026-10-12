@@ -7,13 +7,14 @@ import AiPanel from "./AiPanel";
 import { FeatureBars, Heatmap, ViewsChart } from "./Charts";
 import { date, num, pct } from "./format";
 import PostCard from "./PostCard";
+import Report from "./Report";
 
 const PERIODS = [
   { days: 7, label: "7일" },
   { days: 30, label: "30일" },
   { days: 90, label: "90일" },
 ];
-const TABS = ["요약", "게시글", "인사이트"] as const;
+const TABS = ["요약", "게시글", "인사이트", "리포트"] as const;
 type Tab = (typeof TABS)[number];
 type SortKey = "date" | "views" | "rate";
 
@@ -76,7 +77,7 @@ export default function Analytics() {
 
   return (
     <div>
-      <div className="controls">
+      <div className="controls" hidden={tab === "리포트"}>
         <div className="segmented grow" role="tablist" aria-label="기간">
           {PERIODS.map((p) => (
             <button key={p.days} role="tab" aria-selected={days === p.days} onClick={() => setDays(p.days)}>
@@ -98,7 +99,9 @@ export default function Analytics() {
       </nav>
 
       <main className="content">
-        {error && (
+        {tab === "리포트" && <Report />}
+
+        {tab !== "리포트" && error && (
           <div className="card">
             <p className="error">{error}</p>
             <button className="btn primary small" onClick={load}>
@@ -107,7 +110,7 @@ export default function Analytics() {
           </div>
         )}
 
-        {loading && !data && (
+        {tab !== "리포트" && loading && !data && (
           <div className="card">
             <p className="muted">게시글과 지표를 모으는 중이에요. 글이 많으면 30초 정도 걸려요.</p>
             <div className="skeleton" />
@@ -177,7 +180,7 @@ export default function Analytics() {
           </>
         )}
 
-        {data && <p className="tiny muted footnote">마지막 동기화 {date(data.fetchedAt)} · 최근 글 {data.posts.length}개 기준</p>}
+        {data && tab !== "리포트" && <p className="tiny muted footnote">마지막 동기화 {date(data.fetchedAt)} · 최근 글 {data.posts.length}개 기준</p>}
       </main>
     </div>
   );
