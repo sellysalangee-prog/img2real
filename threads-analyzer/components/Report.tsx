@@ -264,6 +264,7 @@ function ReportView({ report }: { report: ReportData }) {
                 <span className="bar-count tiny muted">
                   {v.hits}/{v.n}
                 </span>
+                {v.avgViews !== undefined && <span className="bar-views tiny muted">평균 조회 {num(v.avgViews)}회</span>}
               </div>
             ))}
           </div>
@@ -272,15 +273,7 @@ function ReportView({ report }: { report: ReportData }) {
 
       {stats.keywords.length > 0 && (
         <section className="card">
-          <h3>키워드별 터진 확률</h3>
-          <p className="tiny muted">2번 이상 쓴 키워드만 보여요.</p>
-          <ul className="chips">
-            {stats.keywords.map((k) => (
-              <li key={k.keyword} className={`chip ${k.hits > 0 ? "cat-interest" : ""}`}>
-                <span className="chip-label">{k.keyword}</span> {k.hits}/{k.n} ({pct(k.rate)})
-              </li>
-            ))}
-          </ul>
+          <KeywordTable keywords={stats.keywords} median={stats.baseline.median} />
         </section>
       )}
 
@@ -340,6 +333,64 @@ function FormulaCard({
           ) : null;
         })}
     </div>
+  );
+}
+
+type KeywordStat = ReportStats["keywords"][number];
+type KeywordSort = "avgViews" | "totalViews" | "rate" | "n";
+
+/** 키워드별 노출량과 터진 확률 */
+function KeywordTable({ keywords, median }: { keywords: KeywordStat[]; median: number }) {
+  const [sort, setSort] = useState<KeywordSort>("avgViews");
+  const hasViews = keywords.some((k) => k.avgViews !== undefined);
+  const sorted = [...keywords].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0) || b.n - a.n);
+
+  return (
+    <>
+      <div className="card-head">
+        <h3>키워드별 노출량</h3>
+        <select value={sort} onChange={(e) => setSort(e.target.value as KeywordSort)} aria-label="정렬">
+          <option value="avgViews">평균 조회순</option>
+          <option value="totalViews">총 조회순</option>
+          <option value="rate">터진 확률순</option>
+          <option value="n">글 수순</option>
+        </select>
+      </div>
+      <p className="tiny muted">2번 이상 쓴 키워드만 보여요. 내 평소 조회수(중간값)는 {num(median)}회예요.</p>
+      {!hasViews && <p className="tiny warn-text">예전에 만든 리포트라 조회수가 없어요. 리포트를 새로 만들면 보여요.</p>}
+      <div className="table-wrap">
+        <table className="kw-table">
+          <thead>
+            <tr>
+              <th>키워드</th>
+              <th>글</th>
+              <th>평균 조회</th>
+              <th>평소 대비</th>
+              <th>터짐</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((k) => (
+              <tr key={k.keyword}>
+                <td className="kw-name">{k.keyword}</td>
+                <td>{k.n}개</td>
+                <td>
+                  {num(k.avgViews)}
+                  {k.totalViews !== undefined && <span className="tiny muted block">총 {num(k.totalViews)}</span>}
+                </td>
+                <td className={k.avgMultiple >= 1 ? "up" : "down"}>{k.avgMultiple.toFixed(1)}배</td>
+                <td>
+                  {pct(k.rate)}
+                  <span className="tiny muted block">
+                    {k.hits}/{k.n}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

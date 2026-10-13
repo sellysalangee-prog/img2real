@@ -17,8 +17,8 @@
 3. **사용 사례 → 맞춤 설정 → 권한**에서 아래 5개를 추가합니다.
    - `threads_basic`, `threads_manage_insights`, `threads_read_replies`
    - `threads_content_publish`, `threads_manage_replies` (답글 올리기용)
-4. **앱 역할 → 역할 → Threads 테스터 추가**에서 내 Threads 계정을 추가합니다.
-5. Threads 앱에서 **설정 → 계정 → 웹사이트 권한 → 초대**로 가서 초대를 수락합니다.
+4. **앱 역할 → 역할 → 사람 추가**에서 **"Threads 테스터"** 를 고르고, 내 Threads 아이디를 **입력한 뒤 아래에 뜨는 계정을 선택**하고 **추가**를 누릅니다.
+5. 휴대폰 Threads 앱에서 **설정 → 설정 더보기 → 웹사이트 권한 → 초대**로 가서 초대를 수락합니다.
 6. **사용 사례 → 맞춤 설정 → 설정**에서 Threads 앱 ID와 앱 시크릿 코드를 확인합니다.
 
 ### 2. Claude API 키 받기
@@ -43,17 +43,19 @@ https://console.anthropic.com 에서 API 키를 만듭니다. 인물 정보 정�
 
 ### 4. 데이터베이스 연결
 
-1. Vercel 프로젝트의 **Storage** 탭 → **Create Database** → **Neon (Postgres)** 를 고릅니다. 무료 플랜이면 충분합니다.
-2. 프로젝트에 연결하면 `DATABASE_URL`이 자동으로 들어갑니다.
-3. **Deployments**에서 최신 배포를 **Redeploy** 합니다.
+1. Vercel 프로젝트의 **Storage** 탭 → **Create Database** → **Neon (Postgres)** 를 고릅니다.
+2. Region은 **Washington, D.C., USA (East)**, 플랜은 **Free**를 고르고, **Auth 스위치는 끕니다** (앱이 Threads 로그인을 쓰므로 필요 없습니다).
+3. 프로젝트 연결 화면에서 **Create database branch** 체크는 모두 끈 채로 두고, **Custom Prefix에 `DATABASE`** 를 입력합니다. 그래야 앱이 찾는 이름인 `DATABASE_URL`로 들어갑니다.
+4. **Environment Variables**에서 `DATABASE_URL`이 생겼는지 확인합니다.
+5. **Deployments**에서 최신 배포를 **Redeploy** 합니다.
 
-표는 첫 접속 때 자동으로 만들어집니다.
+표는 첫 접속 때 자동으로 만들어집니다. 환경 변수를 추가하거나 바꾼 뒤에는 **Deployments → 최신 배포 ⋯ → Redeploy** 를 해야 반영됩니다.
 
 ### 5. 콜백 주소 등록
 
 Meta 앱 설정의 Threads 설정에 아래 주소를 입력합니다.
 
-- 리디렉션 콜백 URL: `https://<배포주소>/api/auth/callback`
+- 리디렉션 콜백 URL: `https://<배포주소>/api/auth/callback` (주소를 **입력한 뒤 아래에 뜨는 항목을 선택**해야 태그로 들어갑니다. 그냥 두고 저장하면 "OAuth 리디렉션 URI를 지정해 주세요" 오류가 납니다)
 - 제거 콜백 URL, 삭제 콜백 URL: `https://<배포주소>/`
 
 ### 6. 사용

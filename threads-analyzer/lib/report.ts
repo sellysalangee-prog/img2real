@@ -8,7 +8,15 @@ const MIN_KEYWORD = 2;
 const MIN_AGE_HOURS = 24;
 
 export type Condition = { dim: string; label: string; value: string };
-export type Stat = { n: number; hits: number; rate: number; avgMultiple: number };
+export type Stat = {
+  n: number;
+  hits: number;
+  rate: number;
+  avgMultiple: number;
+  /** 평균 조회수 (예전에 만든 리포트에는 없을 수 있습니다) */
+  avgViews?: number;
+  totalViews?: number;
+};
 export type Formula = Stat & {
   conditions: Condition[];
   /** 조건에는 없지만 이 글들이 모두 함께 가진 특징 */
@@ -53,6 +61,8 @@ function stat(items: ReportPost[]): Stat {
     hits,
     rate: items.length ? hits / items.length : 0,
     avgMultiple: items.length ? items.reduce((a, p) => a + p.multiple, 0) / items.length : 0,
+    avgViews: items.length ? items.reduce((a, p) => a + p.views, 0) / items.length : 0,
+    totalViews: items.reduce((a, p) => a + p.views, 0),
   };
 }
 
@@ -113,8 +123,8 @@ export function computeReport(allPosts: Post[], tags: Map<string, AiTags>, thres
   const keywords = [...kw]
     .filter(([, items]) => items.length >= MIN_KEYWORD)
     .map(([keyword, items]) => ({ keyword, ...stat(items) }))
-    .sort((a, b) => b.rate - a.rate || b.n - a.n)
-    .slice(0, 30);
+    .sort((a, b) => (b.avgViews ?? 0) - (a.avgViews ?? 0) || b.n - a.n)
+    .slice(0, 40);
 
   // 조합 (2개, 3개 조건)
   const combos = new Map<string, { conditions: Condition[]; items: ReportPost[] }>();

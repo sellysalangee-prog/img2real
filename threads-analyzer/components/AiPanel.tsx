@@ -44,6 +44,9 @@ export default function AiPanel({ posts, periodLabel }: { posts: Post[]; periodL
       {error && <p className="error">{error}</p>}
       {result && !loading && (
         <div className="ai">
+          <p className="tiny muted glossary">
+            반응 = 좋아요 + 답글 + 리포스트 + 인용 + 공유 · 참여율 = 반응 ÷ 조회수 (100명이 봤을 때 몇 명이 눌렀는지)
+          </p>
           <p className="ai-summary">{result.summary}</p>
 
           <h4>잘 된 글의 공통점</h4>
