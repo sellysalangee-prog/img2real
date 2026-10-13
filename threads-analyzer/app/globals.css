@@ -1534,3 +1534,40 @@ select:focus {
   color: var(--muted);
   font-size: 14px;
 }
+
+/* ---------- 일별 조회수 말풍선과 튄 날 ---------- */
+.chart-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.spikes h4 {
+  margin: 14px 0 6px;
+}
+.spikes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.spikes li {
+  display: grid;
+  grid-template-columns: 44px 52px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.spike-date {
+  font-weight: 700;
+}
+.spike-views {
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}

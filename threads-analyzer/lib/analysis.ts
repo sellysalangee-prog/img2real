@@ -190,3 +190,57 @@ export function timeStats(posts: Post[]): { slots: TimeStat[]; weekdays: TimeSta
     weekdays: WEEKDAYS.map((d, i) => timeStat(`${d}요일`, byDay[i])),
   };
 }
+
+// ---------- 조회수가 튄 날과 그 무렵 올린 글 ----------
+
+/** 한국 날짜 (YYYY-MM-DD) */
+export function kstDate(iso: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+}
+
+function shiftDate(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400_000).toISOString().slice(0, 10);
+}
+
+/** 그날과 그 전 이틀 동안 올린 글 중 조회수가 가장 많은 글 */
+export function postAround(posts: Post[], date: string): Post | null {
+  const from = shiftDate(date, -2);
+  return (
+    posts
+      .filter((p) => {
+        const d = kstDate(p.timestamp);
+        return d >= from && d <= date;
+      })
+      .sort((a, b) => b.metrics.views - a.metrics.views)[0] ?? null
+  );
+}
+
+export type Spike = {
+  date: string;
+  views: number;
+  post: Post | null;
+  /** 그 글 조회수가 그날 계정 조회의 20% 이상이면 이 글 때문일 가능성이 큼 */
+  explained: boolean;
+};
+
+/** 평소(중간값)의 2배 이상 조회된 날 중 상위 n일 */
+export function spikeDays(daily: { date: string; views: number }[], posts: Post[], n = 3): Spike[] {
+  const values = daily.map((d) => d.views).sort((a, b) => a - b);
+  const median = values[Math.floor(values.length / 2)] ?? 0;
+  const picked: Spike[] = [];
+  const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 86400_000;
+  for (const d of daily.filter((d) => median > 0 && d.views >= median * 2).sort((a, b) => b.views - a.views)) {
+    const post = postAround(posts, d.date);
+    const explained = Boolean(post && post.metrics.views >= d.views * 0.2);
+    // 같은 글이 이틀 연속 튄 경우 등, 바로 옆 날은 하나로 묶습니다.
+    if (picked.some((x) => near(x.date, d.date) || (explained && x.explained && x.post?.id === post?.id))) continue;
+    picked.push({ date: d.date, views: d.views, post, explained });
+    if (picked.length >= n) break;
+  }
+  return picked;
+}
+
+/** 조회수 많은 글 */
+export function topByViews(posts: Post[], n = 5): Post[] {
+  return [...posts].sort((a, b) => b.metrics.views - a.metrics.views).slice(0, n);
+}
