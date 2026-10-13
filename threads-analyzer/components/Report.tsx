@@ -6,6 +6,7 @@ import type { Explanation, ReportAdvice } from "@/lib/report-ai";
 import type { Features } from "@/lib/tagging";
 import { api, errorMessage } from "./api";
 import { date, num } from "./format";
+import Section from "./Section";
 
 type ModelKey = "opus" | "haiku";
 const MODEL_INFO: Record<ModelKey, { name: string; note: string }> = {
@@ -141,7 +142,6 @@ function conditionsText(f: Formula) {
 
 function ReportView({ report }: { report: ReportData }) {
   const { stats, advice } = report;
-  const [showPosts, setShowPosts] = useState(false);
   const byId = new Map(stats.posts.map((p) => [p.id, p]));
 
   return (
@@ -200,8 +200,14 @@ function ReportView({ report }: { report: ReportData }) {
       </section>
 
       {stats.avoid.length > 0 && (
-        <section className="card">
-          <h3>피해야 할 조합</h3>
+        <Section
+          title="피해야 할 조합"
+          summary={
+            <p className="tiny">
+              {conditionsText(stats.avoid[0])} → {stats.avoid[0].n}개 중 {stats.avoid[0].hits}개 터짐
+            </p>
+          }
+        >
           {stats.avoid.map((f, i) => (
             <div key={i} className="formula avoid">
               <p className="formula-cond">{conditionsText(f)}</p>
@@ -211,12 +217,18 @@ function ReportView({ report }: { report: ReportData }) {
               <Explain reportId={report.id} kind="avoid" index={i} cached={report.explanations?.[`avoid:${i}`]} />
             </div>
           ))}
-        </section>
+        </Section>
       )}
 
       {stats.lifts.length > 0 && (
-        <section className="card">
-          <h3>이 조건이면 확률이 올라가요</h3>
+        <Section
+          title="이 조건이면 확률이 올라가요"
+          summary={
+            <p className="tiny">
+              {stats.lifts[0].label} {stats.lifts[0].value}: {pct(stats.lifts[0].rateWith)} (아니면 {pct(stats.lifts[0].rateWithout)})
+            </p>
+          }
+        >
           <ul className="lifts">
             {stats.lifts.map((l) => (
               <li key={l.label + l.value}>
@@ -229,12 +241,11 @@ function ReportView({ report }: { report: ReportData }) {
               </li>
             ))}
           </ul>
-        </section>
+        </Section>
       )}
 
       {advice && (
-        <section className="card">
-          <h3>다음 글 제안</h3>
+        <Section title="다음 글 제안" defaultOpen>
           <ol className="ideas">
             {advice.nextPosts.map((p) => (
               <li key={p.firstLine}>
@@ -246,11 +257,10 @@ function ReportView({ report }: { report: ReportData }) {
               </li>
             ))}
           </ol>
-        </section>
+        </Section>
       )}
 
-      <section className="card">
-        <h3>항목별 터진 확률</h3>
+      <Section title="항목별 터진 확률" summary={<p className="tiny muted">시간대, 요일, 형식, 길이, 첫 문장, 전개, 참여 유도, 감정, 주제별</p>}>
         {stats.dimensions.map((d) => (
           <div key={d.key} className="feature">
             <h4>{d.label}</h4>
@@ -269,24 +279,26 @@ function ReportView({ report }: { report: ReportData }) {
             ))}
           </div>
         ))}
-      </section>
+      </Section>
 
       {stats.keywords.length > 0 && (
-        <section className="card">
+        <Section
+          title="키워드별 노출량"
+          summary={
+            <p className="tiny">
+              평균 조회 1위: {[...stats.keywords].sort((a, b) => (b.avgViews ?? 0) - (a.avgViews ?? 0))[0].keyword}
+            </p>
+          }
+        >
           <KeywordTable keywords={stats.keywords} median={stats.baseline.median} />
-        </section>
+        </Section>
       )}
 
-      <section className="card">
-        <div className="card-head">
-          <h3>글별 분류 결과</h3>
-          <button className="link-btn tiny" onClick={() => setShowPosts((v) => !v)}>
-            {showPosts ? "접기" : `${stats.posts.length}개 보기`}
-          </button>
-        </div>
-        <p className="tiny muted">AI가 글을 어떻게 분류했는지 확인할 수 있어요.</p>
-        {showPosts && stats.posts.map((p) => <TaggedPost key={p.id} p={p} />)}
-      </section>
+      <Section title="글별 분류 결과" summary={<p className="tiny muted">AI가 글 {stats.posts.length}개를 어떻게 분류했는지 확인해요</p>}>
+        {stats.posts.map((p) => (
+          <TaggedPost key={p.id} p={p} />
+        ))}
+      </Section>
 
       <p className="tiny muted center">이번 리포트 AI 비용 {report.aiCostUsd > 0 ? won(report.aiCostUsd) : "없음"}</p>
     </>
@@ -348,7 +360,7 @@ function KeywordTable({ keywords, median }: { keywords: KeywordStat[]; median: n
   return (
     <>
       <div className="card-head">
-        <h3>키워드별 노출량</h3>
+        <span className="tiny muted">정렬</span>
         <select value={sort} onChange={(e) => setSort(e.target.value as KeywordSort)} aria-label="정렬">
           <option value="avgViews">평균 조회순</option>
           <option value="totalViews">총 조회순</option>

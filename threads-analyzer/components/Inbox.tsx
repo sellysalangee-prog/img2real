@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CheckResult, InboxItem } from "@/lib/types";
 import { api, errorMessage } from "./api";
 import { date } from "./format";
+import { InfluenceBadge, isImportant, LabelBadges } from "./labels";
 import PersonCard from "./PersonCard";
 
 const FILTERS = [
@@ -23,6 +24,23 @@ export default function Inbox({ onOpenPerson }: { onOpenPerson: (id: string) => 
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<"important" | "latest">("important");
+  const [onlyImportant, setOnlyImportant] = useState(false);
+
+  // 지인·관심 라벨 > 활발한 사람 > 최신순으로 놓치면 안 되는 댓글을 위로 올립니다.
+  const shown = useMemo(() => {
+    if (!items) return null;
+    const list = onlyImportant ? items.filter((i) => i.person && isImportant(i.person.labels)) : [...items];
+    if (sortMode === "latest") return list;
+    const weight = (i: InboxItem) =>
+      (i.person && isImportant(i.person.labels) ? 100 : 0) +
+      (i.person && ["spark", "connector", "talker"].includes(i.person.influence) ? 20 : i.person?.influence === "regular" ? 10 : 0);
+    return list.sort((a, b) => weight(b) - weight(a) || b.createdAt.localeCompare(a.createdAt));
+  }, [items, sortMode, onlyImportant]);
+
+  function updateLabels(personId: string, labels: string[]) {
+    setItems((prev) => prev?.map((i) => (i.person?.id === personId ? { ...i, person: { ...i.person, labels } } : i)) ?? null);
+  }
 
   const load = useCallback(async (f: FilterKey) => {
     setError(null);
@@ -105,17 +123,41 @@ export default function Inbox({ onOpenPerson }: { onOpenPerson: (id: string) => 
       {error && <p className="error">{error}</p>}
 
       {items === null && !error && <div className="skeleton" />}
+      {items && items.length > 0 && (
+        <div className="list-tools">
+          <select value={sortMode} onChange={(e) => setSortMode(e.target.value as "important" | "latest")} aria-label="정렬">
+            <option value="important">중요한 사람 먼저</option>
+            <option value="latest">최신순</option>
+          </select>
+          <label className="check-label">
+            <input type="checkbox" checked={onlyImportant} onChange={(e) => setOnlyImportant(e.target.checked)} /> 지인·관심만
+          </label>
+          <span className="tiny muted right">{shown?.length ?? 0}개</span>
+        </div>
+      )}
       {items?.length === 0 && (
         <p className="muted empty">{filter === "open" ? "답할 댓글이 없어요. 다 챙기셨네요!" : "해당하는 댓글이 없어요."}</p>
       )}
-      {items?.map((item) => (
-        <InboxCard key={item.id} item={item} onOpenPerson={onOpenPerson} onDone={remove} />
+      {shown?.length === 0 && items && items.length > 0 && <p className="muted empty">지인·관심 라벨을 붙인 사람의 댓글이 없어요.</p>}
+      {shown?.map((item) => (
+        <InboxCard key={item.id} item={item} onOpenPerson={onOpenPerson} onDone={remove} onLabels={updateLabels} />
       ))}
     </div>
   );
 }
 
-function InboxCard({ item, onOpenPerson, onDone }: { item: InboxItem; onOpenPerson: (id: string) => void; onDone: (id: string) => void }) {
+function InboxCard({
+  item,
+  onOpenPerson,
+  onDone,
+  onLabels,
+}: {
+  item: InboxItem;
+  onOpenPerson: (id: string) => void;
+  onDone: (id: string) => void;
+  onLabels: (personId: string, labels: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [check, setCheck] = useState<{ draft: string; result: CheckResult } | null>(null);
   const [busy, setBusy] = useState<"check" | "post" | "status" | null>(null);
@@ -170,22 +212,26 @@ function InboxCard({ item, onOpenPerson, onDone }: { item: InboxItem; onOpenPers
   }
 
   return (
-    <article className="card inbox-card">
+    <article className={`card inbox-card ${open ? "open" : ""}`}>
+      <button className="inbox-row" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="inbox-row-head">
+          <b>{item.person ? `@${item.person.username}` : "비공개 계정"}</b>
+          {item.person && <LabelBadges labels={item.person.labels} />}
+          {item.person && item.person.influence !== "newcomer" && <InfluenceBadge type={item.person.influence} />}
+          <span className="tiny muted right">{date(item.createdAt)}</span>
+        </span>
+        <span className={`inbox-row-text ${open ? "full" : ""}`}>{item.text || "(내용 없음)"}</span>
+      </button>
+
+      {!open ? null : (
+        <>
       <p className="context tiny muted">
         원글: {item.post.text.slice(0, 60) || "(본문 없음)"}
         {item.post.text.length > 60 && "…"}
       </p>
       {item.myParentText && <p className="context tiny">↳ 내 답글: {item.myParentText.slice(0, 80)}</p>}
 
-      <div className="comment">
-        <div className="comment-head">
-          <b>{item.person ? `@${item.person.username}` : "비공개 계정"}</b>
-          <span className="tiny muted">{date(item.createdAt)}</span>
-        </div>
-        <p className="comment-text">{item.text || <span className="muted">(내용 없음)</span>}</p>
-      </div>
-
-      <PersonCard person={item.person} onOpen={onOpenPerson} />
+      <PersonCard person={item.person} onOpen={onOpenPerson} onLabels={item.person ? (labels) => onLabels(item.person!.id, labels) : undefined} />
 
       {item.status === "open" ? (
         posted ? (
@@ -231,6 +277,8 @@ function InboxCard({ item, onOpenPerson, onDone }: { item: InboxItem; onOpenPers
             </button>
           )}
         </div>
+      )}
+        </>
       )}
     </article>
   );

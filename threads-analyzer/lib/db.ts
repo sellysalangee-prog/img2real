@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 CREATE INDEX IF NOT EXISTS reports_account ON reports (account_id, created_at DESC);
 
+-- 사용자가 붙이는 인물 라벨 (예: 지인, 관심)
+ALTER TABLE people ADD COLUMN IF NOT EXISTS labels TEXT[] NOT NULL DEFAULT '{}';
+
 -- 글 분류에 쓸 모델: opus | haiku
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tag_model TEXT NOT NULL DEFAULT 'opus';
 `;

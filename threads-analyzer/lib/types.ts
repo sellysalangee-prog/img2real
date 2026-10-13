@@ -61,10 +61,14 @@ export type Fact = {
   origin: "ai" | "user";
 };
 
+export type InfluenceTypeKey = "spark" | "connector" | "talker" | "regular" | "newcomer";
+
 export type PersonCard = {
   id: string;
   username: string;
   notes: string;
+  labels: string[];
+  influence: InfluenceTypeKey;
   forgotten: boolean;
   commentCount: number;
   /** 아직 정보 정리를 안 한 댓글이 있으면 true */
@@ -88,6 +92,8 @@ export type PersonSummary = {
   id: string;
   username: string;
   notes: string;
+  labels: string[];
+  influence: InfluenceTypeKey;
   lastSeenAt: string;
   commentCount: number;
   openCount: number;
@@ -110,6 +116,15 @@ export type PersonDetail = {
   id: string;
   username: string;
   notes: string;
+  labels: string[];
+  influence: {
+    type: InfluenceTypeKey;
+    comments: number;
+    started: number;
+    pulledIn: number;
+    joinedOthers: number;
+    withMe: number;
+  };
   firstSeenAt: string;
   lastSeenAt: string;
   facts: Fact[];

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Fact, FactCategoryKey, PersonDetail, PersonSummary } from "@/lib/types";
 import { api, errorMessage } from "./api";
 import { date } from "./format";
+import { INFLUENCE_TYPES } from "@/lib/influence";
+import { InfluenceBadge, LabelBadges, LabelEditor, PRESET_LABELS } from "./labels";
 
 const CATEGORIES: { key: FactCategoryKey; label: string }[] = [
   { key: "basic", label: "기본" },
@@ -35,18 +37,48 @@ function PeopleList({ onSelect }: { onSelect: (id: string) => void }) {
     return () => clearTimeout(t);
   }, [q]);
 
+  const [chip, setChip] = useState<string>("all");
+  const chips = useMemo(() => {
+    const list = people ?? [];
+    const base = [{ key: "all", label: "전체", count: list.length }];
+    const labelChips = PRESET_LABELS.map((l) => ({ key: `label:${l.key}`, label: `${l.icon} ${l.key}`, count: list.filter((p) => p.labels.includes(l.key)).length }));
+    const typeChips = (Object.keys(INFLUENCE_TYPES) as (keyof typeof INFLUENCE_TYPES)[]).map((t) => ({
+      key: `type:${t}`,
+      label: INFLUENCE_TYPES[t].label,
+      count: list.filter((p) => p.influence === t).length,
+    }));
+    return [...base, ...labelChips, ...typeChips].filter((c) => c.key === "all" || c.count > 0);
+  }, [people]);
+  const filtered = useMemo(() => {
+    if (!people) return null;
+    if (chip.startsWith("label:")) return people.filter((p) => p.labels.includes(chip.slice(6)));
+    if (chip.startsWith("type:")) return people.filter((p) => p.influence === chip.slice(5));
+    return people;
+  }, [people, chip]);
+
   return (
     <div className="content">
-      <input className="search" type="search" placeholder="아이디, 정보, 메모로 찾기 (예: 캐나다)" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="search" type="search" placeholder="아이디, 정보, 메모, 라벨로 찾기 (예: 캐나다)" value={q} onChange={(e) => setQ(e.target.value)} />
+      {people && people.length > 0 && (
+        <div className="chip-filter" role="tablist" aria-label="사람 거르기">
+          {chips.map((c) => (
+            <button key={c.key} role="tab" aria-selected={chip === c.key} onClick={() => setChip(c.key)}>
+              {c.label} <span className="muted">{c.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       {people === null && !error && <div className="skeleton" />}
       {people?.length === 0 && <p className="muted empty">{q ? "찾는 사람이 없어요." : "아직 기억한 사람이 없어요. 댓글함에서 새 댓글을 가져와 보세요."}</p>}
       <ul className="people">
-        {people?.map((p) => (
+        {filtered?.map((p) => (
           <li key={p.id}>
             <button className="person-row" onClick={() => onSelect(p.id)}>
               <div className="person-row-head">
                 <b>@{p.username}</b>
+                <LabelBadges labels={p.labels} />
+                {p.influence !== "newcomer" && <InfluenceBadge type={p.influence} />}
                 {p.openCount > 0 && <span className="badge">답할 댓글 {p.openCount}</span>}
                 <span className="tiny muted right">{date(p.lastSeenAt).split(" ").slice(0, 2).join(" ")}</span>
               </div>
@@ -152,6 +184,35 @@ function PersonView({ id, onBack }: { id: string; onBack: () => void }) {
         <p className="tiny muted">
           처음 대화 {date(person.firstSeenAt)} · 마지막 대화 {date(person.lastSeenAt)}
         </p>
+
+        <div className="fact-group">
+          <h4>내가 붙인 라벨</h4>
+          <LabelEditor personId={person.id} labels={person.labels} onChange={(labels) => setPerson({ ...person, labels })} custom />
+        </div>
+
+        <div className="fact-group">
+          <h4>영향력</h4>
+          <p>
+            <InfluenceBadge type={person.influence.type} /> <span className="tiny muted">{INFLUENCE_TYPES[person.influence.type].desc}</span>
+          </p>
+          <ul className="influence-stats tiny">
+            <li>
+              <b>{person.influence.comments}</b> 댓글
+            </li>
+            <li>
+              <b>{person.influence.pulledIn}</b>명 끌어들임
+            </li>
+            <li>
+              <b>{person.influence.started}</b>번 대화 시작
+            </li>
+            <li>
+              <b>{person.influence.joinedOthers}</b>번 남의 대화 참여
+            </li>
+            <li>
+              <b>{person.influence.withMe}</b>번 나와 주고받음
+            </li>
+          </ul>
+        </div>
 
         {CATEGORIES.map((c) => {
           const facts = current.filter((f) => f.category === c.key);

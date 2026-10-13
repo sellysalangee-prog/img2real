@@ -6,13 +6,13 @@ import Analytics from "./Analytics";
 import Inbox from "./Inbox";
 import People from "./People";
 
-const SECTIONS = ["댓글함", "사람", "분석"] as const;
+const SECTIONS = ["분석", "사람", "댓글함"] as const;
 type Section = (typeof SECTIONS)[number];
 
 export default function Dashboard({ profile }: { profile: Profile }) {
-  const [section, setSection] = useState<Section>("댓글함");
+  const [section, setSection] = useState<Section>("분석");
   // 한 번 연 화면은 탭을 옮겨도 상태를 유지합니다.
-  const [opened, setOpened] = useState<Set<Section>>(new Set(["댓글함"]));
+  const [opened, setOpened] = useState<Set<Section>>(new Set(["분석"]));
   const [personId, setPersonId] = useState<string | null>(null);
 
   function go(s: Section) {
@@ -62,7 +62,7 @@ export default function Dashboard({ profile }: { profile: Profile }) {
       )}
       {opened.has("분석") && (
         <div hidden={section !== "분석"}>
-          <Analytics />
+          <Analytics onOpenPerson={openPerson} />
         </div>
       )}
     </div>

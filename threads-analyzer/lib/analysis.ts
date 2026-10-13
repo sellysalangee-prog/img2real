@@ -144,3 +144,49 @@ export function featureGroups(posts: Post[]): FeatureGroups {
 export function mediaLabel(type: string): string {
   return MEDIA_LABELS[type] ?? type;
 }
+
+// ---------- 올리는 시간별 성과 (막대 그래프용) ----------
+
+export type TimeStat = {
+  label: string;
+  count: number;
+  /** 보통 조회수 (중간값: 아주 잘 되거나 안 된 글 하나에 휘둘리지 않는 값) */
+  medianViews: number | null;
+  maxViews: number | null;
+  engagement: number | null;
+};
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function timeStat(label: string, items: Post[]): TimeStat {
+  const views = items.map((p) => p.metrics.views);
+  return {
+    label,
+    count: items.length,
+    medianViews: median(views),
+    maxViews: views.length ? Math.max(...views) : null,
+    engagement: summarize(items).engagement,
+  };
+}
+
+export const SLOT_LABELS = HOUR_SLOTS.map((h, i) => `${h}~${HOUR_SLOTS[i + 1] ?? 24}시`);
+
+/** 시간대별, 요일별 성과 (한국 시간) */
+export function timeStats(posts: Post[]): { slots: TimeStat[]; weekdays: TimeStat[] } {
+  const bySlot: Post[][] = HOUR_SLOTS.map(() => []);
+  const byDay: Post[][] = WEEKDAYS.map(() => []);
+  for (const p of posts) {
+    const { weekday, hour } = localParts(p.timestamp);
+    bySlot[slotOf(hour)]?.push(p);
+    byDay[weekday]?.push(p);
+  }
+  return {
+    slots: SLOT_LABELS.map((label, i) => timeStat(label, bySlot[i])),
+    weekdays: WEEKDAYS.map((d, i) => timeStat(`${d}요일`, byDay[i])),
+  };
+}

@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { z } from "zod";
 import { askStructured } from "./claude";
+import { computeInfluence, loadCommentRows, type Influence } from "./influence";
 import { FACT_CATEGORIES } from "./memory";
 import type { CheckResult, ConversationItem, Fact, InboxItem, PersonDetail, PersonSummary } from "./types";
 
@@ -61,6 +62,7 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
       parent_is_mine: boolean | null;
       person_id: string | null;
       notes: string | null;
+      labels: string[] | null;
       forgotten: boolean | null;
       comment_count: number;
       pending: boolean;
@@ -69,7 +71,7 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
     SELECT c.id, c.text, c.username, c.created_at, c.permalink, c.status,
       post.text AS post_text, post.permalink AS post_permalink,
       parent.text AS parent_text, parent.is_mine AS parent_is_mine,
-      p.id::text AS person_id, p.notes, p.forgotten,
+      p.id::text AS person_id, p.notes, p.labels, p.forgotten,
       (SELECT count(*)::int FROM comments x WHERE x.account_id = c.account_id AND x.username = c.username AND NOT x.is_mine) AS comment_count,
       EXISTS (SELECT 1 FROM comments x WHERE x.account_id = c.account_id AND x.username = c.username AND NOT x.is_mine AND NOT x.extracted) AS pending
     FROM comments c
@@ -81,6 +83,7 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
     LIMIT 60`;
 
   const facts = await currentFacts(sql, rows.filter((r) => r.person_id && !r.forgotten).map((r) => r.person_id!));
+  const influence = computeInfluence(await loadCommentRows(sql, accountId));
   return rows.map((r) => ({
     id: r.id,
     text: r.text,
@@ -95,6 +98,8 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
             id: r.person_id,
             username: r.username,
             notes: r.notes ?? "",
+            labels: r.labels ?? [],
+            influence: influence.get(r.username)?.type ?? "newcomer",
             forgotten: Boolean(r.forgotten),
             commentCount: r.comment_count,
             pending: r.pending,
@@ -114,25 +119,37 @@ export async function setCommentStatus(sql: Sql, accountId: string, commentId: s
 export async function listPeople(sql: Sql, accountId: string, q: string): Promise<PersonSummary[]> {
   const like = `%${q.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
   const rows = await sql<
-    { id: string; username: string; notes: string; last_seen_at: Date; comment_count: number; open_count: number; pending_count: number }[]
+    {
+      id: string;
+      username: string;
+      notes: string;
+      labels: string[];
+      last_seen_at: Date;
+      comment_count: number;
+      open_count: number;
+      pending_count: number;
+    }[]
   >`
-    SELECT p.id::text AS id, p.username, p.notes, p.last_seen_at,
+    SELECT p.id::text AS id, p.username, p.notes, p.labels, p.last_seen_at,
       count(c.id) FILTER (WHERE NOT c.is_mine)::int AS comment_count,
       count(c.id) FILTER (WHERE NOT c.is_mine AND c.status = 'open')::int AS open_count,
       count(c.id) FILTER (WHERE NOT c.is_mine AND NOT c.extracted)::int AS pending_count
     FROM people p
     LEFT JOIN comments c ON c.account_id = p.account_id AND c.username = p.username
     WHERE p.account_id = ${accountId} AND NOT p.forgotten
-      AND (${q} = '' OR p.username ILIKE ${like} OR p.notes ILIKE ${like}
+      AND (${q} = '' OR p.username ILIKE ${like} OR p.notes ILIKE ${like} OR array_to_string(p.labels, ' ') ILIKE ${like}
            OR EXISTS (SELECT 1 FROM facts f WHERE f.person_id = p.id AND f.status = 'current' AND (f.value ILIKE ${like} OR f.label ILIKE ${like})))
     GROUP BY p.id
     ORDER BY p.last_seen_at DESC
     LIMIT 300`;
   const facts = await currentFacts(sql, rows.map((r) => r.id));
+  const influence = computeInfluence(await loadCommentRows(sql, accountId));
   return rows.map((r) => ({
     id: r.id,
     username: r.username,
     notes: r.notes,
+    labels: r.labels,
+    influence: influence.get(r.username)?.type ?? "newcomer",
     lastSeenAt: r.last_seen_at.toISOString(),
     commentCount: r.comment_count,
     openCount: r.open_count,
@@ -143,8 +160,10 @@ export async function listPeople(sql: Sql, accountId: string, q: string): Promis
 
 async function ownedPerson(sql: Sql, accountId: string, personId: string) {
   if (!/^\d+$/.test(personId)) return null;
-  const [p] = await sql<{ id: string; username: string; notes: string; first_seen_at: Date; last_seen_at: Date; forgotten: boolean }[]>`
-    SELECT id::text AS id, username, notes, first_seen_at, last_seen_at, forgotten FROM people
+  const [p] = await sql<
+    { id: string; username: string; notes: string; labels: string[]; first_seen_at: Date; last_seen_at: Date; forgotten: boolean }[]
+  >`
+    SELECT id::text AS id, username, notes, labels, first_seen_at, last_seen_at, forgotten FROM people
     WHERE id = ${personId} AND account_id = ${accountId}`;
   return p ?? null;
 }
@@ -182,10 +201,21 @@ export async function getPerson(sql: Sql, accountId: string, personId: string): 
     permalink: c.permalink,
   }));
 
+  const influence: Influence = computeInfluence(await loadCommentRows(sql, accountId)).get(p.username) ?? {
+    type: "newcomer",
+    comments: 0,
+    started: 0,
+    pulledIn: 0,
+    joinedOthers: 0,
+    withMe: 0,
+  };
+
   return {
     id: p.id,
     username: p.username,
     notes: p.notes,
+    labels: p.labels,
+    influence,
     firstSeenAt: p.first_seen_at.toISOString(),
     lastSeenAt: p.last_seen_at.toISOString(),
     facts: facts.map(toFact),
@@ -193,10 +223,16 @@ export async function getPerson(sql: Sql, accountId: string, personId: string): 
   };
 }
 
-export async function updateNotes(sql: Sql, accountId: string, personId: string, notes: string): Promise<boolean> {
+export const PersonPatch = z.object({
+  notes: z.string().max(2000).optional(),
+  labels: z.array(z.string().trim().min(1).max(12)).max(8).optional(),
+});
+
+export async function updatePerson(sql: Sql, accountId: string, personId: string, patch: z.infer<typeof PersonPatch>): Promise<boolean> {
   const p = await ownedPerson(sql, accountId, personId);
   if (!p) return false;
-  await sql`UPDATE people SET notes = ${notes.slice(0, 2000)} WHERE id = ${p.id}`;
+  if (patch.notes !== undefined) await sql`UPDATE people SET notes = ${patch.notes} WHERE id = ${p.id}`;
+  if (patch.labels !== undefined) await sql`UPDATE people SET labels = ${[...new Set(patch.labels)]}::text[] WHERE id = ${p.id}`;
   return true;
 }
 
