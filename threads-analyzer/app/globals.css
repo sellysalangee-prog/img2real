@@ -1490,3 +1490,47 @@ select:focus {
   font-weight: 800;
   color: var(--muted);
 }
+
+/* ---------- 성적표 ---------- */
+.headline-big {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+.accent {
+  color: var(--accent);
+}
+.up-text {
+  color: var(--good);
+  font-weight: 700;
+}
+.down-text {
+  color: var(--bad);
+  font-weight: 700;
+}
+.headline .ai-summary {
+  margin-top: 12px;
+}
+.hit-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.hit-list li {
+  margin-bottom: 12px;
+}
+.hit-text {
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+.export-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.detail-title {
+  margin: 8px 4px 0;
+  color: var(--muted);
+  font-size: 14px;
+}

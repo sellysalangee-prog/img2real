@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import type { Formula, ReportStats } from "@/lib/report";
 import type { Explanation, ReportAdvice } from "@/lib/report-ai";
 import type { Features } from "@/lib/tagging";
+import { buildCsv, buildMarkdown, CLAUDE_PROMPT, downloadText } from "@/lib/report-export";
+import { conditionPhrase, formulaResult, formulaSentence } from "@/lib/report-text";
 import { api, errorMessage } from "./api";
 import { date, num } from "./format";
 import Section from "./Section";
@@ -37,20 +39,26 @@ const PERIODS = [
 ] as const;
 const THRESHOLDS = [2, 3, 5];
 
+type Previous = { createdAt: string; baseRate: number; hits: number; analyzed: number } | null;
+
 export default function Report() {
   const [report, setReport] = useState<ReportData | null>(null);
+  const [previous, setPrevious] = useState<Previous>(null);
+  const [username, setUsername] = useState("");
   const [tagModel, setTagModel] = useState<ModelKey>("opus");
   const [tagged, setTagged] = useState(0);
-  const [days, setDays] = useState<0 | 30 | 90>(90);
+  const [days, setDays] = useState<0 | 30 | 90>(30);
   const [threshold, setThreshold] = useState(3);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    api<{ report: ReportData | null; tagModel: ModelKey; tagged: number }>("/api/report")
+    api<{ report: ReportData | null; previous: Previous; username: string; tagModel: ModelKey; tagged: number }>("/api/report")
       .then((r) => {
         setReport(r.report);
+        setPrevious(r.previous);
+        setUsername(r.username);
         setTagModel(r.tagModel);
         setTagged(r.tagged);
         if (r.report) {
@@ -78,6 +86,9 @@ export default function Report() {
       // 2) 통계 계산과 AI 요약
       setProgress("확률 계산하고 요약하는 중…");
       const data = await api<ReportData>("/api/report", { method: "POST", json: { days, threshold } });
+      if (report) {
+        setPrevious({ createdAt: report.createdAt, baseRate: report.stats.baseRate, hits: report.stats.counts.hits, analyzed: report.stats.counts.analyzed });
+      }
       setReport({ ...data, aiCostUsd: data.aiCostUsd + tagCost });
     } catch (e) {
       setError(errorMessage(e));
@@ -86,13 +97,34 @@ export default function Report() {
     }
   }
 
+  const periodLabel = PERIODS.find((p) => p.days === days)?.label ?? "";
+
   return (
     <>
       <section className="card">
-        <h3>글 구조 리포트</h3>
+        <div className="card-head">
+          <h3>스레드 성적표</h3>
+          {report && <span className="tiny muted">{date(report.createdAt)}</span>}
+        </div>
         <p className="tiny muted">
-          글마다 첫 문장, 전개, 참여 유도, 감정, 주제를 분류해서 어떤 조합이 터졌는지 확률로 정리해요. 분류는 글마다 처음 한 번만 해요.
+          {report
+            ? `${report.days ? `최근 ${report.days}일` : "전체 기간"} 글을 분석한 결과예요. 새 글이 쌓이면 다시 만들어 보세요.`
+            : "내 글의 구조를 분석해서 무엇이 터졌는지, 왜 터졌는지, 다음엔 뭘 쓸지 한 장으로 정리해요."}
         </p>
+        <button className="btn primary full" onClick={build} disabled={progress !== null || !loaded}>
+          {progress ? "만드는 중…" : report ? `성적표 새로 만들기 (최근 ${periodLabel})` : `성적표 만들기 (최근 ${periodLabel})`}
+        </button>
+        {progress && (
+          <p className="notice" role="status">
+            {progress}
+          </p>
+        )}
+        {error && <p className="error">{error}</p>}
+      </section>
+
+      {report && <ReportView report={report} previous={previous} username={username} />}
+
+      <Section title="⚙️ 설정" summary={<p className="tiny muted">기간 {periodLabel} · 평소의 {threshold}배 이상이면 터짐 · 분류 모델 {MODEL_INFO[tagModel].name} · 분류된 글 {tagged}개</p>}>
         <div className="form-grid">
           <label className="tiny muted">기간</label>
           <div className="segmented" role="tablist" aria-label="기간">
@@ -113,108 +145,144 @@ export default function Report() {
             ))}
           </select>
         </div>
-        <button className="btn primary full" onClick={build} disabled={progress !== null || !loaded}>
-          {progress ? "만드는 중…" : "리포트 만들기"}
-        </button>
-        {progress && (
-          <p className="notice" role="status">
-            {progress}
-          </p>
-        )}
-        {error && <p className="error">{error}</p>}
-        <p className="tiny muted center">
-          분류된 글 {tagged}개 · 분류 모델 {MODEL_INFO[tagModel].name}
-        </p>
-      </section>
-
-      {report && <ReportView report={report} />}
-
-      <ModelSettings model={tagModel} onModel={setTagModel} onReset={() => setTagged(0)} />
+        <p className="tiny muted">설정을 바꾼 뒤 성적표를 새로 만들면 반영돼요.</p>
+        <ModelSettings model={tagModel} onModel={setTagModel} onReset={() => setTagged(0)} />
+      </Section>
     </>
   );
 }
 
-// ---------- 리포트 ----------
+// ---------- 성적표 ----------
 
-function conditionsText(f: Formula) {
-  return f.conditions.map((c) => c.value).join(" · ");
-}
-
-function ReportView({ report }: { report: ReportData }) {
+function ReportView({ report, previous, username }: { report: ReportData; previous: Previous; username: string }) {
   const { stats, advice } = report;
   const byId = new Map(stats.posts.map((p) => [p.id, p]));
+  const hits = stats.posts.filter((p) => p.hit).sort((a, b) => b.multiple - a.multiple);
+  const topFormulas = stats.formulas.slice(0, 3);
+  const restFormulas = stats.formulas.slice(3);
+  const diff = previous ? stats.baseRate - previous.baseRate : null;
 
   return (
     <>
-      <section className="card">
-        <div className="card-head">
-          <h3>결과</h3>
-          <span className="tiny muted">{date(report.createdAt)}</span>
-        </div>
-        <div className="report-meta">
-          <div>
-            <span className="kpi-label">분석한 글</span>
-            <span className="kpi-value">{stats.counts.analyzed}개</span>
-          </div>
-          <div>
-            <span className="kpi-label">터진 글</span>
-            <span className="kpi-value">{stats.counts.hits}개</span>
-          </div>
-          <div>
-            <span className="kpi-label">평균 확률</span>
-            <span className="kpi-value">{pct(stats.baseRate)}</span>
-          </div>
-        </div>
-        <p className="tiny muted">
-          평소 조회수(중간값) {num(stats.baseline.median)}회의 {stats.baseline.threshold}배인 <b>{num(stats.baseline.hitViews)}회 이상</b>을 "터짐"으로 셌어요.
-          {stats.counts.excludedRecent > 0 && ` 올린 지 하루가 안 된 글 ${stats.counts.excludedRecent}개는 뺐어요.`}
-          {stats.counts.untagged > 0 && ` 분류되지 않은 글 ${stats.counts.untagged}개는 뺐어요.`}
+      {/* 한 줄 결론 */}
+      <section className="card headline">
+        <p className="headline-big">
+          글 <b>{stats.counts.analyzed}개</b> 중 <b className="accent">{stats.counts.hits}개</b>가 평소의 {stats.baseline.threshold}배 넘게 보였어요
         </p>
-        {stats.counts.analyzed < 30 && <p className="tiny warn-text">글이 30개보다 적어서 확률이 우연일 수 있어요. 글이 쌓일수록 정확해져요.</p>}
+        <p className="tiny muted">
+          평소 조회수(중간값) {num(stats.baseline.median)}회 → {num(stats.baseline.hitViews)}회 이상이면 &quot;터짐&quot;
+          {diff !== null && (
+            <span className={diff >= 0 ? "up-text" : "down-text"}>
+              {" "}
+              · 지난 성적표보다 터진 비율 {diff >= 0 ? "▲" : "▼"} {Math.abs(Math.round(diff * 100))}%p
+            </span>
+          )}
+        </p>
+        {stats.counts.analyzed < 30 && <p className="tiny warn-text">글이 30개보다 적어서 우연일 수 있어요. 글이 쌓일수록 정확해져요.</p>}
+        {advice && (
+          <>
+            <p className="ai-summary">{advice.summary}</p>
+            <ul className="list good">
+              {advice.insights.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        {report.adviceError && <p className="tiny muted">AI 요약은 만들지 못했어요: {report.adviceError}</p>}
       </section>
 
-      {advice && (
-        <section className="card">
-          <h3>한눈에 보기</h3>
-          <p className="ai-summary">{advice.summary}</p>
-          <ul className="list good">
-            {advice.insights.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {report.adviceError && <p className="tiny muted">AI 요약은 만들지 못했어요: {report.adviceError}</p>}
-
+      {/* ① 무엇이 터졌나 */}
       <section className="card">
-        <h3>터지는 공식 TOP {stats.formulas.length || ""}</h3>
-        {stats.formulas.length ? (
-          stats.formulas.map((f, i) => (
+        <h3>① 이번에 터진 글</h3>
+        {hits.length ? (
+          <ol className="hit-list">
+            {hits.slice(0, 3).map((p) => (
+              <li key={p.id}>
+                <p className="hit-text">{p.text.slice(0, 70) || "(본문 없음)"}</p>
+                <p className="tiny muted">
+                  조회 <b className="accent">{num(p.views)}</b> · 평소의 {p.multiple.toFixed(1)}배 · {p.features.timeslot} · {p.features.media}
+                  {p.permalink && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <a className="link" href={p.permalink} target="_blank" rel="noreferrer">
+                        보기
+                      </a>
+                    </>
+                  )}
+                </p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted empty">이 기간에는 평소의 {stats.baseline.threshold}배를 넘은 글이 없어요. ⚙️ 설정에서 기준을 낮춰 볼 수 있어요.</p>
+        )}
+        {hits.length > 3 && <p className="tiny muted">외 {hits.length - 3}개는 아래 &quot;자세히&quot;의 글별 결과에서 볼 수 있어요.</p>}
+      </section>
+
+      {/* ② 왜 터졌나 */}
+      <section className="card">
+        <h3>② 왜 터졌을까</h3>
+        {topFormulas.length ? (
+          topFormulas.map((f, i) => (
             <FormulaCard key={i} rank={i + 1} f={f} byId={byId}>
               <Explain reportId={report.id} kind="formula" index={i} cached={report.explanations?.[`formula:${i}`]} />
             </FormulaCard>
           ))
         ) : (
-          <p className="muted empty">같은 조건으로 2번 이상 터진 조합이 아직 없어요. 글이 더 쌓이거나 터짐 기준을 낮춰 보세요.</p>
+          <p className="muted empty">같은 특징으로 2번 이상 터진 글이 아직 없어요. 글이 더 쌓이면 공식이 보여요.</p>
+        )}
+        {stats.avoid[0] && (
+          <div className="formula avoid">
+            <p className="tiny warn-text">⚠️ 이런 글은 피하세요</p>
+            <p className="formula-cond">{formulaSentence(stats.avoid[0])}</p>
+            <p className="formula-stat">{formulaResult(stats.avoid[0])}</p>
+            <Explain reportId={report.id} kind="avoid" index={0} cached={report.explanations?.["avoid:0"]} />
+          </div>
         )}
       </section>
 
-      {stats.avoid.length > 0 && (
-        <Section
-          title="피해야 할 조합"
-          summary={
-            <p className="tiny">
-              {conditionsText(stats.avoid[0])} → {stats.avoid[0].n}개 중 {stats.avoid[0].hits}개 터짐
-            </p>
-          }
-        >
-          {stats.avoid.map((f, i) => (
+      {/* ③ 다음엔 뭘 쓸까 */}
+      {advice && (
+        <section className="card">
+          <h3>③ 다음엔 이렇게 써 보세요</h3>
+          <ol className="ideas">
+            {advice.nextPosts.map((p) => (
+              <li key={p.firstLine}>
+                <b>“{p.firstLine}”</b>
+                <p className="muted">{p.outline}</p>
+                <p className="tiny muted">
+                  {p.when} · {p.formula}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      <ExportCard report={report} username={username} />
+
+      {/* 자세히 */}
+      <h4 className="detail-title">자세히 보기</h4>
+
+      {restFormulas.length > 0 && (
+        <Section title="터지는 공식 더 보기" summary={<p className="tiny muted">{restFormulas.length}개 더</p>}>
+          {restFormulas.map((f, i) => (
+            <FormulaCard key={i} rank={i + 4} f={f} byId={byId}>
+              <Explain reportId={report.id} kind="formula" index={i + 3} cached={report.explanations?.[`formula:${i + 3}`]} />
+            </FormulaCard>
+          ))}
+        </Section>
+      )}
+
+      {stats.avoid.length > 1 && (
+        <Section title="피해야 할 글 더 보기" summary={<p className="tiny muted">{stats.avoid.length - 1}개 더</p>}>
+          {stats.avoid.slice(1).map((f, i) => (
             <div key={i} className="formula avoid">
-              <p className="formula-cond">{conditionsText(f)}</p>
-              <p className="formula-stat">
-                {f.n}개 중 {f.hits}개 터짐 ({pct(f.rate)}) · 평소의 {f.avgMultiple.toFixed(1)}배
-              </p>
-              <Explain reportId={report.id} kind="avoid" index={i} cached={report.explanations?.[`avoid:${i}`]} />
+              <p className="formula-cond">{formulaSentence(f)}</p>
+              <p className="formula-stat">{formulaResult(f)}</p>
+              <Explain reportId={report.id} kind="avoid" index={i + 1} cached={report.explanations?.[`avoid:${i + 1}`]} />
             </div>
           ))}
         </Section>
@@ -222,10 +290,11 @@ function ReportView({ report }: { report: ReportData }) {
 
       {stats.lifts.length > 0 && (
         <Section
-          title="이 조건이면 확률이 올라가요"
+          title="이런 특징이 있으면 잘 터져요"
           summary={
             <p className="tiny">
-              {stats.lifts[0].label} {stats.lifts[0].value}: {pct(stats.lifts[0].rateWith)} (아니면 {pct(stats.lifts[0].rateWithout)})
+              {conditionPhrase({ dim: stats.dimensions.find((d) => d.label === stats.lifts[0].label)?.key ?? "", label: stats.lifts[0].label, value: stats.lifts[0].value })} 글:{" "}
+              {pct(stats.lifts[0].rateWith)} (아니면 {pct(stats.lifts[0].rateWithout)})
             </p>
           }
         >
@@ -241,22 +310,6 @@ function ReportView({ report }: { report: ReportData }) {
               </li>
             ))}
           </ul>
-        </Section>
-      )}
-
-      {advice && (
-        <Section title="다음 글 제안" defaultOpen>
-          <ol className="ideas">
-            {advice.nextPosts.map((p) => (
-              <li key={p.firstLine}>
-                <p className="tiny muted">
-                  {p.formula} · {p.when}
-                </p>
-                <b>“{p.firstLine}”</b>
-                <p className="muted">{p.outline}</p>
-              </li>
-            ))}
-          </ol>
         </Section>
       )}
 
@@ -284,11 +337,7 @@ function ReportView({ report }: { report: ReportData }) {
       {stats.keywords.length > 0 && (
         <Section
           title="키워드별 노출량"
-          summary={
-            <p className="tiny">
-              평균 조회 1위: {[...stats.keywords].sort((a, b) => (b.avgViews ?? 0) - (a.avgViews ?? 0))[0].keyword}
-            </p>
-          }
+          summary={<p className="tiny">평균 조회 1위: {[...stats.keywords].sort((a, b) => (b.avgViews ?? 0) - (a.avgViews ?? 0))[0].keyword}</p>}
         >
           <KeywordTable keywords={stats.keywords} median={stats.baseline.median} />
         </Section>
@@ -300,9 +349,49 @@ function ReportView({ report }: { report: ReportData }) {
         ))}
       </Section>
 
-      <p className="tiny muted center">이번 리포트 AI 비용 {report.aiCostUsd > 0 ? won(report.aiCostUsd) : "없음"}</p>
+      <p className="tiny muted center">이번 성적표 AI 비용 {report.aiCostUsd > 0 ? won(report.aiCostUsd) : "없음"}</p>
     </>
   );
+}
+
+/** Claude 채팅앱에서 다시 분석할 수 있도록 데이터를 내려받습니다. */
+function ExportCard({ report, username }: { report: ReportData; username: string }) {
+  const [copied, setCopied] = useState(false);
+  const day = report.createdAt.slice(0, 10);
+  const base = `threads-report-${username || "account"}-${day}`;
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(CLAUDE_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("아래 문장을 복사하세요", CLAUDE_PROMPT);
+    }
+  }
+
+  return (
+    <section className="card">
+      <h3>📥 Claude에서 더 분석하기</h3>
+      <p className="tiny muted">두 파일을 내려받아 Claude 채팅에 함께 올리고, 아래 질문을 붙여 넣으면 돼요.</p>
+      <div className="export-buttons">
+        <button className="btn ghost small" onClick={() => downloadText(`${base}.csv`, buildCsv(report), "text/csv;charset=utf-8")}>
+          글 데이터 (CSV)
+        </button>
+        <button className="btn ghost small" onClick={() => downloadText(`${base}.md`, buildMarkdown(report, username), "text/markdown;charset=utf-8")}>
+          성적표 요약 (md)
+        </button>
+        <button className="btn primary small" onClick={copyPrompt}>
+          {copied ? "복사했어요 ✓" : "질문 복사"}
+        </button>
+      </div>
+      {!report.stats.posts[0]?.metrics && <p className="tiny warn-text">예전에 만든 성적표라 좋아요·답글 수가 비어 있어요. 새로 만들면 채워져요.</p>}
+    </section>
+  );
+}
+
+function conditionsText(f: Formula) {
+  return formulaSentence(f);
 }
 
 function FormulaCard({
@@ -347,6 +436,7 @@ function FormulaCard({
     </div>
   );
 }
+
 
 type KeywordStat = ReportStats["keywords"][number];
 type KeywordSort = "avgViews" | "totalViews" | "rate" | "n";

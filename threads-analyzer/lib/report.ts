@@ -30,6 +30,8 @@ export type ReportPost = {
   permalink: string | null;
   timestamp: string;
   views: number;
+  /** 좋아요·답글·리포스트·인용·공유 (예전 리포트에는 없을 수 있습니다) */
+  metrics?: { likes: number; replies: number; reposts: number; quotes: number; shares: number };
   multiple: number;
   hit: boolean;
   features: Features;
@@ -86,6 +88,7 @@ export function computeReport(allPosts: Post[], tags: Map<string, AiTags>, thres
       permalink: p.permalink,
       timestamp: p.timestamp,
       views,
+      metrics: { likes: p.metrics.likes, replies: p.metrics.replies, reposts: p.metrics.reposts, quotes: p.metrics.quotes, shares: p.metrics.shares },
       multiple: base > 0 ? views / base : 0,
       hit: base > 0 && views >= hitViews,
       features: features(p, tags.get(p.id)!),
