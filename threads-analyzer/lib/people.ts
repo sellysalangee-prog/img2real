@@ -63,13 +63,15 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
       notes: string | null;
       forgotten: boolean | null;
       comment_count: number;
+      pending: boolean;
     }[]
   >`
     SELECT c.id, c.text, c.username, c.created_at, c.permalink, c.status,
       post.text AS post_text, post.permalink AS post_permalink,
       parent.text AS parent_text, parent.is_mine AS parent_is_mine,
       p.id::text AS person_id, p.notes, p.forgotten,
-      (SELECT count(*)::int FROM comments x WHERE x.account_id = c.account_id AND x.username = c.username AND NOT x.is_mine) AS comment_count
+      (SELECT count(*)::int FROM comments x WHERE x.account_id = c.account_id AND x.username = c.username AND NOT x.is_mine) AS comment_count,
+      EXISTS (SELECT 1 FROM comments x WHERE x.account_id = c.account_id AND x.username = c.username AND NOT x.is_mine AND NOT x.extracted) AS pending
     FROM comments c
     LEFT JOIN posts post ON post.id = c.post_id
     LEFT JOIN comments parent ON parent.id = c.parent_id
@@ -95,6 +97,7 @@ export async function getInbox(sql: Sql, accountId: string, status: string): Pro
             notes: r.notes ?? "",
             forgotten: Boolean(r.forgotten),
             commentCount: r.comment_count,
+            pending: r.pending,
             facts: facts.get(r.person_id) ?? [],
           }
         : null,
@@ -110,10 +113,13 @@ export async function setCommentStatus(sql: Sql, accountId: string, commentId: s
 
 export async function listPeople(sql: Sql, accountId: string, q: string): Promise<PersonSummary[]> {
   const like = `%${q.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
-  const rows = await sql<{ id: string; username: string; notes: string; last_seen_at: Date; comment_count: number; open_count: number }[]>`
+  const rows = await sql<
+    { id: string; username: string; notes: string; last_seen_at: Date; comment_count: number; open_count: number; pending_count: number }[]
+  >`
     SELECT p.id::text AS id, p.username, p.notes, p.last_seen_at,
       count(c.id) FILTER (WHERE NOT c.is_mine)::int AS comment_count,
-      count(c.id) FILTER (WHERE NOT c.is_mine AND c.status = 'open')::int AS open_count
+      count(c.id) FILTER (WHERE NOT c.is_mine AND c.status = 'open')::int AS open_count,
+      count(c.id) FILTER (WHERE NOT c.is_mine AND NOT c.extracted)::int AS pending_count
     FROM people p
     LEFT JOIN comments c ON c.account_id = p.account_id AND c.username = p.username
     WHERE p.account_id = ${accountId} AND NOT p.forgotten
@@ -130,6 +136,7 @@ export async function listPeople(sql: Sql, accountId: string, q: string): Promis
     lastSeenAt: r.last_seen_at.toISOString(),
     commentCount: r.comment_count,
     openCount: r.open_count,
+    pending: r.pending_count > 0,
     facts: facts.get(r.id) ?? [],
   }));
 }

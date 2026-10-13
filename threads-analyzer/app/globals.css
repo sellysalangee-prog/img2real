@@ -1122,3 +1122,48 @@ select:focus {
 .rewrite.after {
   border: 1px solid color-mix(in oklab, var(--good) 45%, var(--line));
 }
+.bar-views {
+  grid-column: 1 / -1;
+  margin: -4px 0 4px;
+  text-align: right;
+}
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+.kw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.kw-table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.kw-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.kw-name {
+  font-weight: 700;
+}
+.kw-table td.up {
+  color: var(--good);
+  font-weight: 700;
+}
+.kw-table td.down {
+  color: var(--muted);
+}
+.block {
+  display: block;
+}
+.glossary {
+  margin-bottom: 8px;
+}

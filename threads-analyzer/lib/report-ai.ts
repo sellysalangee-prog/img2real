@@ -23,6 +23,7 @@ const SYSTEM = `당신은 Threads 크리에이터의 데이터 분석가입니�
 - 반드시 주어진 숫자에 근거합니다. 표본이 3~4개뿐인 결과는 "아직 표본이 적다"고 밝힙니다.
 - 상관관계일 뿐 원인이 확실하지 않다는 점을 과장 없이 다룹니다.
 - 첫 문장 예시는 터진 글의 실제 말투(반말/존댓말, 길이, 이모지 사용)를 따라 씁니다.
+- "반응"이라고 뭉뚱그리지 말고 좋아요·답글·리포스트·인용·공유·조회수 중 무엇인지 구체적으로 씁니다.
 - 모든 문장은 한국어로 짧고 구체적으로 씁니다.`;
 
 function formulaText(f: Formula) {
@@ -43,10 +44,10 @@ export async function reportAdvice(stats: ReportStats) {
     "## 있을 때 터질 확률이 오르는 조건",
     stats.lifts.map((l) => `${l.label}=${l.value}: ${Math.round(l.rateWith * 100)}% (없을 때 ${Math.round(l.rateWithout * 100)}%, ${l.nWith}개)`).join("\n") || "(없음)",
     "",
-    "## 터진 확률이 높은 키워드",
+    "## 평균 조회수가 높은 키워드",
     stats.keywords
       .slice(0, 10)
-      .map((k) => `${k.keyword}: ${k.n}개 중 ${k.hits}개`)
+      .map((k) => `${k.keyword}: ${k.n}개 중 ${k.hits}개 터짐, 평균 조회 ${Math.round(k.avgViews ?? 0)}회`)
       .join("\n") || "(없음)",
     "",
     "## 터진 글 원문",
@@ -80,6 +81,7 @@ const EXPLAIN_SYSTEM = `당신은 Threads 크리에이터의 데이터 분석가
 - 반드시 주어진 글과 숫자에 근거합니다. 표본이 적으면 그렇다고 밝힙니다.
 - 원인은 단정하지 말고 "~했을 가능성이 커요"처럼 근거와 함께 씁니다.
 - 예시 문장과 다시 쓴 글은 이 계정의 실제 말투(반말/존댓말, 길이, 이모지)를 따릅니다.
+- "반응"이라고 뭉뚱그리지 말고 좋아요·답글·리포스트·인용·공유·조회수 중 무엇인지 구체적으로 씁니다.
 - 모든 문장은 한국어로 짧고 구체적으로 씁니다.`;
 
 type PostLine = { id: string; text: string; multiple: number; hit: boolean; features: Record<string, unknown> };

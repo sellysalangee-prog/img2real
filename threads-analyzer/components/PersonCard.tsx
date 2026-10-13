@@ -26,7 +26,9 @@ export default function PersonCard({ person, onOpen }: { person: Card | null; on
           ))}
         </ul>
       ) : (
-        <p className="tiny muted">아직 기억한 정보가 없어요.</p>
+        <p className="tiny muted">
+          {person.pending ? "아직 정리 전이에요. 새 댓글 가져오기를 누르면 정리해요." : "댓글에 본인 이야기가 없어서 기억한 정보가 없어요."}
+        </p>
       )}
       {person.notes && <p className="pcard-notes tiny">메모: {person.notes}</p>}
     </div>

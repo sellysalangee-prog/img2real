@@ -173,7 +173,7 @@ export async function extractForPerson(sql: Sql, accountId: string, person: { id
         .join("\n\n"),
     ].join("\n");
 
-    const result = await askStructured({ schema: ExtractionSchema, system: EXTRACT_SYSTEM, prompt, effort: "medium", maxTokens: 8000 });
+    const result = await askStructured({ schema: ExtractionSchema, system: EXTRACT_SYSTEM, prompt, effort: "low", maxTokens: 8000 });
     added = await applyExtraction(sql, person.id, result, comments);
   }
 
