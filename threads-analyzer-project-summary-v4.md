@@ -1,12 +1,12 @@
-# Threads 글 분석 도구 프로젝트 정리 (v3)
+# Threads 글 분석 도구 프로젝트 정리 (v4)
 
 - 작성일: 2026년 10월 12일
 - 코드 위치: GitHub `sellysalangee-prog/img2real` 저장소, `claude/thread-analysis-tool-gka9e2` 브랜치, `threads-analyzer/` 폴더
-- 관련 문서: 기획서 `threads-analyzer-plan-v6.md`, 설치 안내 `threads-analyzer/README.md`
+- 관련 문서: 기획서 `threads-analyzer-plan-v7.md`, 설치 안내 `threads-analyzer/README.md`
 
 ---
 
-> v3 갱신 (2026년 10월 13일): 배포 완료. 탭 순서를 분석 → 사람 → 댓글함으로 바꾸고, 댓글 트리거 분석·영향력 유형·지인·관심 라벨·키워드 노출량을 추가했습니다. 자세한 역할 구분은 기획서 v6을 참고하세요.
+> v4 갱신 (2026년 10월 13일): 리포트를 "스레드 성적표 한 장"으로 바꾸고 Claude 재분석용 CSV·md 내보내기를 추가했습니다. 이전 갱신: 배포 완료. 탭 순서를 분석 → 사람 → 댓글함으로 바꾸고, 댓글 트리거 분석·영향력 유형·지인·관심 라벨·키워드 노출량을 추가했습니다. 자세한 역할 구분은 기획서 v7을 참고하세요.
 
 ## 1. 처음 목표
 

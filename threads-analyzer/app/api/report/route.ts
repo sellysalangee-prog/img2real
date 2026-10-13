@@ -14,14 +14,29 @@ export const maxDuration = 300;
 export async function GET() {
   return withAccount(async (account) => {
     const sql = await db();
-    const [[report], [settings]] = await Promise.all([
-      sql<{ id: string; data: Record<string, unknown> }[]>`
-        SELECT id::text AS id, data FROM reports WHERE account_id = ${account.id} ORDER BY created_at DESC LIMIT 1`,
+    const [reports, [settings]] = await Promise.all([
+      sql<{ id: string; data: Record<string, unknown> & { stats?: { baseRate: number; counts: { hits: number; analyzed: number } } } }[]>`
+        SELECT id::text AS id, data FROM reports WHERE account_id = ${account.id} ORDER BY created_at DESC LIMIT 2`,
       sql<{ tag_model: string; tagged: number }[]>`
         SELECT a.tag_model, (SELECT count(*)::int FROM post_tags t WHERE t.account_id = a.id) AS tagged
         FROM accounts a WHERE a.id = ${account.id}`,
     ]);
-    return NextResponse.json({ report: report ? { ...report.data, id: report.id } : null, tagModel: settings.tag_model, tagged: settings.tagged });
+    const [latest, previous] = reports;
+    return NextResponse.json({
+      report: latest ? { ...latest.data, id: latest.id } : null,
+      // 지난 리포트와 비교할 숫자만 보냅니다.
+      previous: previous?.data.stats
+        ? {
+            createdAt: previous.data.createdAt,
+            baseRate: previous.data.stats.baseRate,
+            hits: previous.data.stats.counts.hits,
+            analyzed: previous.data.stats.counts.analyzed,
+          }
+        : null,
+      username: account.username,
+      tagModel: settings.tag_model,
+      tagged: settings.tagged,
+    });
   });
 }
 
