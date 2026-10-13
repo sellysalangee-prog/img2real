@@ -2,10 +2,30 @@
 
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { HOUR_SLOTS, WEEKDAYS, type FeatureGroups, type HeatCell } from "@/lib/analysis";
-import type { DailyPoint } from "@/lib/types";
+import type { DailyPoint, Post } from "@/lib/types";
 import { num, pct } from "./format";
 
-export function ViewsChart({ data }: { data: DailyPoint[] }) {
+type TipProps = { active?: boolean; payload?: { value?: number }[]; label?: string | number };
+
+/** 그래프 말풍선: 날짜, 조회수, 그 무렵 올린 대표 글 한 줄 */
+function ViewsTip({ active, payload, label, around }: TipProps & { around?: (date: string) => Post | null }) {
+  if (!active || !payload?.length) return null;
+  const date = String(label);
+  const post = around?.(date);
+  return (
+    <div className="chart-tip">
+      <b>{date}</b>
+      <span>조회수 {num(Number(payload[0].value))}</span>
+      {post && (
+        <span className="tiny muted">
+          이 무렵 올린 글: {post.text.slice(0, 16) || "(본문 없음)"}… ({num(post.metrics.views)})
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function ViewsChart({ data, around }: { data: DailyPoint[]; around?: (date: string) => Post | null }) {
   if (data.length < 2) return <p className="muted empty">아직 일별 조회수 데이터가 없어요.</p>;
   return (
     <div className="chart">
@@ -27,11 +47,7 @@ export function ViewsChart({ data }: { data: DailyPoint[] }) {
             minTickGap={24}
           />
           <YAxis tickFormatter={(v: number) => num(v)} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={48} />
-          <Tooltip
-            formatter={(v) => [num(Number(v)), "조회수"]}
-            labelFormatter={(d) => String(d)}
-            contentStyle={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, fontSize: 13 }}
-          />
+          <Tooltip content={<ViewsTip around={around} />} />
           <Area type="monotone" dataKey="views" stroke="var(--accent)" strokeWidth={2} fill="url(#viewsFill)" />
         </AreaChart>
       </ResponsiveContainer>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { featureGroups, filterByDays, rankPosts, summarize, engagementRate, timeStats } from "@/lib/analysis";
+import { featureGroups, filterByDays, rankPosts, summarize, engagementRate, timeStats, postAround, spikeDays, topByViews, kstDate } from "@/lib/analysis";
 import type { DashboardData } from "@/lib/types";
 import AiPanel from "./AiPanel";
 import BestTime from "./BestTime";
@@ -30,6 +30,7 @@ export default function Analytics({ onOpenPerson }: { onOpenPerson: (id: string)
   const [days, setDays] = useState(30);
   const [tab, setTab] = useState<Tab>("리포트");
   const [sort, setSort] = useState<SortKey>("date");
+  const [topBy, setTopBy] = useState<"views" | "rate">("views");
 
   async function load() {
     setLoading(true);
@@ -66,6 +67,8 @@ export default function Analytics({ onOpenPerson }: { onOpenPerson: (id: string)
       summary: summarize(posts),
       prevSummary: prev.length ? summarize(prev) : null,
       ranked: rankPosts(posts),
+      topViews: topByViews(posts),
+      spikes: spikeDays(data.daily.filter((d) => d.date >= cutoff), data.posts),
       time: timeStats(posts),
       features: featureGroups(posts),
       daily: data.daily.filter((d) => d.date >= cutoff),
@@ -144,23 +147,56 @@ export default function Analytics({ onOpenPerson }: { onOpenPerson: (id: string)
             <section className="card">
               <h3>계정 전체 일별 조회수</h3>
               <p className="tiny muted">그날 내 계정 전체(예전 글, 답글 포함)가 받은 조회수예요.</p>
-              <ViewsChart data={view.daily} />
+              <ViewsChart data={view.daily} around={(d) => postAround(data!.posts, d)} />
+              {view.spikes.length > 0 && (
+                <div className="spikes">
+                  <h4>📈 조회수가 튄 날</h4>
+                  <ul>
+                    {view.spikes.map((sp) => (
+                      <li key={sp.date}>
+                        <span className="spike-date">
+                          {Number(sp.date.slice(5, 7))}.{Number(sp.date.slice(8, 10))}
+                        </span>
+                        <span className="spike-views">{num(sp.views)}</span>
+                        <span className="spike-post tiny">
+                          {sp.explained && sp.post ? (
+                            <>
+                              ← {sp.post.text.slice(0, 18) || "(본문 없음)"}… <span className="muted">({Number(kstDate(sp.post.timestamp).slice(5, 7))}.{Number(kstDate(sp.post.timestamp).slice(8, 10))} 올림 · {num(sp.post.metrics.views)})</span>
+                            </>
+                          ) : (
+                            <span className="muted">이 무렵 올린 글 중엔 큰 글이 없어요. 예전 글이나 답글 조회일 수 있어요</span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
 
-            <Section
-              title={`반응 좋은 글 TOP ${view.ranked.best.length}`}
-              defaultOpen
-              summary={view.ranked.best[0] && <p className="tiny">1위: {view.ranked.best[0].text.slice(0, 40)}…</p>}
-            >
-              {view.ranked.best.length ? (
-                view.ranked.best.map((p, i) => <PostCard key={p.id} post={p} rank={i + 1} />)
+            <Section title="인기 글 TOP 5" defaultOpen summary={view.topViews[0] && <p className="tiny">1위: {view.topViews[0].text.slice(0, 40)}…</p>}>
+              <div className="segmented small-seg" role="tablist" aria-label="순위 기준">
+                <button role="tab" aria-selected={topBy === "views"} onClick={() => setTopBy("views")}>
+                  조회수 많은 글
+                </button>
+                <button role="tab" aria-selected={topBy === "rate"} onClick={() => setTopBy("rate")}>
+                  참여율 높은 글
+                </button>
+              </div>
+              <p className="tiny muted">
+                {topBy === "views"
+                  ? "많이 보인 순서예요. 많이 퍼진 글이에요."
+                  : "본 사람 중 좋아요·답글·리포스트·인용·공유를 누른 비율 순서예요. 조회가 적어도 반응이 진한 글이에요."}
+              </p>
+              {(topBy === "views" ? view.topViews : view.ranked.best).length ? (
+                (topBy === "views" ? view.topViews : view.ranked.best).map((p, i) => <PostCard key={p.id} post={p} rank={i + 1} />)
               ) : (
                 <p className="muted empty">이 기간에는 순위를 매길 만한 글이 없어요.</p>
               )}
             </Section>
 
             {view.ranked.worst.length > 0 && (
-              <Section title="아쉬웠던 글" summary={<p className="tiny muted">참여율이 낮았던 글 {view.ranked.worst.length}개</p>}>
+              <Section title="참여율 낮은 글" summary={<p className="tiny muted">본 사람에 비해 반응이 적었던 글 {view.ranked.worst.length}개</p>}>
                 {view.ranked.worst.map((p) => (
                   <PostCard key={p.id} post={p} />
                 ))}
