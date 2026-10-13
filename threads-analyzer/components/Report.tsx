@@ -111,20 +111,6 @@ export default function Report() {
             ? `${report.days ? `최근 ${report.days}일` : "전체 기간"} 글을 분석한 결과예요. 새 글이 쌓이면 다시 만들어 보세요.`
             : "내 글의 구조를 분석해서 무엇이 터졌는지, 왜 터졌는지, 다음엔 뭘 쓸지 한 장으로 정리해요."}
         </p>
-        <button className="btn primary full" onClick={build} disabled={progress !== null || !loaded}>
-          {progress ? "만드는 중…" : report ? `성적표 새로 만들기 (최근 ${periodLabel})` : `성적표 만들기 (최근 ${periodLabel})`}
-        </button>
-        {progress && (
-          <p className="notice" role="status">
-            {progress}
-          </p>
-        )}
-        {error && <p className="error">{error}</p>}
-      </section>
-
-      {report && <ReportView report={report} previous={previous} username={username} />}
-
-      <Section title="⚙️ 설정" summary={<p className="tiny muted">기간 {periodLabel} · 평소의 {threshold}배 이상이면 터짐 · 분류 모델 {MODEL_INFO[tagModel].name} · 분류된 글 {tagged}개</p>}>
         <div className="form-grid">
           <label className="tiny muted">기간</label>
           <div className="segmented" role="tablist" aria-label="기간">
@@ -145,9 +131,24 @@ export default function Report() {
             ))}
           </select>
         </div>
-        <p className="tiny muted">설정을 바꾼 뒤 성적표를 새로 만들면 반영돼요.</p>
+        <button className="btn primary full" onClick={build} disabled={progress !== null || !loaded}>
+          {progress ? "만드는 중…" : report ? "성적표 새로 만들기" : "성적표 만들기"}
+        </button>
+        {progress && (
+          <p className="notice" role="status">
+            {progress}
+          </p>
+        )}
+        {error && <p className="error">{error}</p>}
+      </section>
+
+      <Section title="⚙️ 분류 모델" summary={<p className="tiny muted">{MODEL_INFO[tagModel].name} · 분류된 글 {tagged}개</p>}>
         <ModelSettings model={tagModel} onModel={setTagModel} onReset={() => setTagged(0)} />
       </Section>
+
+      {report && <ReportView report={report} previous={previous} username={username} />}
+
+
     </>
   );
 }
@@ -216,7 +217,7 @@ function ReportView({ report, previous, username }: { report: ReportData; previo
             ))}
           </ol>
         ) : (
-          <p className="muted empty">이 기간에는 평소의 {stats.baseline.threshold}배를 넘은 글이 없어요. ⚙️ 설정에서 기준을 낮춰 볼 수 있어요.</p>
+          <p className="muted empty">이 기간에는 평소의 {stats.baseline.threshold}배를 넘은 글이 없어요. 맨 위에서 터짐 기준을 낮춰 볼 수 있어요.</p>
         )}
         {hits.length > 3 && <p className="tiny muted">외 {hits.length - 3}개는 아래 &quot;자세히&quot;의 글별 결과에서 볼 수 있어요.</p>}
       </section>
@@ -651,8 +652,7 @@ function ModelSettings({ model, onModel, onReset }: { model: ModelKey; onModel: 
   const fmt = (v: Features[keyof Features] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? "-"));
 
   return (
-    <section className="card">
-      <h3>분류 모델</h3>
+    <div>
       <div className="model-options" role="radiogroup" aria-label="분류 모델">
         {(Object.keys(MODEL_INFO) as ModelKey[]).map((m) => (
           <button key={m} role="radio" aria-checked={model === m} className="model-option" onClick={() => choose(m)} disabled={busy !== null}>
@@ -727,6 +727,6 @@ function ModelSettings({ model, onModel, onReset }: { model: ModelKey; onModel: 
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
