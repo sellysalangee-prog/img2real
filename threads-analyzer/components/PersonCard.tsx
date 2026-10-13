@@ -1,7 +1,16 @@
 import type { PersonCard as Card } from "@/lib/types";
+import { LabelEditor } from "./labels";
 
 /** 댓글 옆에 붙는 작은 인물 카드 */
-export default function PersonCard({ person, onOpen }: { person: Card | null; onOpen?: (id: string) => void }) {
+export default function PersonCard({
+  person,
+  onOpen,
+  onLabels,
+}: {
+  person: Card | null;
+  onOpen?: (id: string) => void;
+  onLabels?: (labels: string[]) => void;
+}) {
   if (!person) return <div className="pcard muted tiny">비공개 계정이라 아이디가 보이지 않아 기억할 수 없어요.</div>;
   if (person.forgotten) return <div className="pcard muted tiny">기억하지 않기로 한 사람이에요.</div>;
 
@@ -31,6 +40,7 @@ export default function PersonCard({ person, onOpen }: { person: Card | null; on
         </p>
       )}
       {person.notes && <p className="pcard-notes tiny">메모: {person.notes}</p>}
+      {onLabels && <LabelEditor personId={person.id} labels={person.labels} onChange={onLabels} />}
     </div>
   );
 }

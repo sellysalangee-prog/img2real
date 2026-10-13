@@ -1,29 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { featureGroups, filterByDays, heatmap, rankPosts, summarize, engagementRate } from "@/lib/analysis";
+import { featureGroups, filterByDays, rankPosts, summarize, engagementRate, timeStats } from "@/lib/analysis";
 import type { DashboardData } from "@/lib/types";
 import AiPanel from "./AiPanel";
-import { FeatureBars, Heatmap, ViewsChart } from "./Charts";
+import BestTime from "./BestTime";
+import { FeatureBars, ViewsChart } from "./Charts";
 import { date, num, pct } from "./format";
 import PostCard from "./PostCard";
 import Report from "./Report";
+import Section from "./Section";
+import Triggers from "./Triggers";
 
 const PERIODS = [
   { days: 7, label: "7일" },
   { days: 30, label: "30일" },
   { days: 90, label: "90일" },
 ];
-const TABS = ["요약", "게시글", "인사이트", "리포트"] as const;
+const TABS = ["리포트", "요약", "게시글", "인사이트", "트리거"] as const;
+/** 글 지표(/api/data)가 필요한 탭 */
+const NEEDS_DATA: readonly string[] = ["요약", "게시글", "인사이트"];
 type Tab = (typeof TABS)[number];
 type SortKey = "date" | "views" | "rate";
 
-export default function Analytics() {
+export default function Analytics({ onOpenPerson }: { onOpenPerson: (id: string) => void }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [days, setDays] = useState(30);
-  const [tab, setTab] = useState<Tab>("요약");
+  const [tab, setTab] = useState<Tab>("리포트");
   const [sort, setSort] = useState<SortKey>("date");
 
   async function load() {
@@ -45,9 +50,11 @@ export default function Analytics() {
     }
   }
 
+  // 글 지표는 필요한 탭을 처음 열 때 한 번만 불러옵니다.
   useEffect(() => {
-    load();
-  }, []);
+    if (NEEDS_DATA.includes(tab) && !data && !loading && !error) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -59,7 +66,7 @@ export default function Analytics() {
       summary: summarize(posts),
       prevSummary: prev.length ? summarize(prev) : null,
       ranked: rankPosts(posts),
-      heat: heatmap(posts),
+      time: timeStats(posts),
       features: featureGroups(posts),
       daily: data.daily.filter((d) => d.date >= cutoff),
     };
@@ -74,22 +81,11 @@ export default function Analytics() {
   }, [view, sort]);
 
   const periodLabel = PERIODS.find((p) => p.days === days)!.label;
+  const range = `${date(new Date(Date.now() - days * 86400_000).toISOString()).split(" ").slice(0, 2).join(" ")} ~ 오늘`;
+  const needsData = NEEDS_DATA.includes(tab);
 
   return (
     <div>
-      <div className="controls" hidden={tab === "리포트"}>
-        <div className="segmented grow" role="tablist" aria-label="기간">
-          {PERIODS.map((p) => (
-            <button key={p.days} role="tab" aria-selected={days === p.days} onClick={() => setDays(p.days)}>
-              최근 {p.label}
-            </button>
-          ))}
-        </div>
-        <button className="btn ghost small" onClick={load} disabled={loading}>
-          {loading ? "동기화 중…" : "새로고침"}
-        </button>
-      </div>
-
       <nav className="subtabs" role="tablist">
         {TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
@@ -98,10 +94,26 @@ export default function Analytics() {
         ))}
       </nav>
 
+      <div className="controls" hidden={tab === "리포트"}>
+        <div className="segmented grow" role="tablist" aria-label="기간">
+          {PERIODS.map((p) => (
+            <button key={p.days} role="tab" aria-selected={days === p.days} onClick={() => setDays(p.days)}>
+              최근 {p.label}
+            </button>
+          ))}
+        </div>
+        {needsData && (
+          <button className="btn ghost small" onClick={load} disabled={loading}>
+            {loading ? "동기화 중…" : "새로고침"}
+          </button>
+        )}
+      </div>
+
       <main className="content">
         {tab === "리포트" && <Report />}
+        {tab === "트리거" && <Triggers days={days} onOpenPerson={onOpenPerson} />}
 
-        {tab !== "리포트" && error && (
+        {needsData && error && (
           <div className="card">
             <p className="error">{error}</p>
             <button className="btn primary small" onClick={load}>
@@ -110,7 +122,7 @@ export default function Analytics() {
           </div>
         )}
 
-        {tab !== "리포트" && loading && !data && (
+        {needsData && loading && !data && (
           <div className="card">
             <p className="muted">게시글과 지표를 모으는 중이에요. 글이 많으면 30초 정도 걸려요.</p>
             <div className="skeleton" />
@@ -119,34 +131,40 @@ export default function Analytics() {
 
         {view && tab === "요약" && (
           <>
+            <p className="tiny muted basis">
+              {range} 동안 올린 원글 {view.summary.postCount}개 기준이에요. 답글과 예전 글이 받은 조회는 빠져 있어요.
+            </p>
             <section className="kpis">
-              <Kpi label="총 조회수" value={num(view.summary.totalViews)} prev={view.prevSummary?.totalViews} current={view.summary.totalViews} />
+              <Kpi label="올린 글 조회수" value={num(view.summary.totalViews)} prev={view.prevSummary?.totalViews} current={view.summary.totalViews} />
               <Kpi label="평균 참여율" value={pct(view.summary.engagement)} prev={view.prevSummary?.engagement} current={view.summary.engagement} />
               <Kpi label="올린 글" value={`${view.summary.postCount}개`} prev={view.prevSummary?.postCount} current={view.summary.postCount} />
               <Kpi label="팔로워" value={num(data?.followers)} />
             </section>
 
             <section className="card">
-              <h3>일별 조회수</h3>
+              <h3>계정 전체 일별 조회수</h3>
+              <p className="tiny muted">그날 내 계정 전체(예전 글, 답글 포함)가 받은 조회수예요.</p>
               <ViewsChart data={view.daily} />
             </section>
 
-            <section className="card">
-              <h3>반응 좋은 글 TOP {view.ranked.best.length}</h3>
+            <Section
+              title={`반응 좋은 글 TOP ${view.ranked.best.length}`}
+              defaultOpen
+              summary={view.ranked.best[0] && <p className="tiny">1위: {view.ranked.best[0].text.slice(0, 40)}…</p>}
+            >
               {view.ranked.best.length ? (
                 view.ranked.best.map((p, i) => <PostCard key={p.id} post={p} rank={i + 1} />)
               ) : (
                 <p className="muted empty">이 기간에는 순위를 매길 만한 글이 없어요.</p>
               )}
-            </section>
+            </Section>
 
             {view.ranked.worst.length > 0 && (
-              <section className="card">
-                <h3>아쉬웠던 글</h3>
+              <Section title="아쉬웠던 글" summary={<p className="tiny muted">참여율이 낮았던 글 {view.ranked.worst.length}개</p>}>
                 {view.ranked.worst.map((p) => (
                   <PostCard key={p.id} post={p} />
                 ))}
-              </section>
+              </Section>
             )}
           </>
         )}
@@ -167,20 +185,21 @@ export default function Analytics() {
 
         {view && tab === "인사이트" && (
           <>
-            <section className="card">
-              <h3>언제 올리면 좋을까</h3>
-              <Heatmap grid={view.heat} />
-            </section>
-            <section className="card">
-              <h3>어떤 글이 반응이 좋을까</h3>
+            <Section title="언제 올리면 좋을까" defaultOpen>
+              <BestTime slots={view.time.slots} weekdays={view.time.weekdays} />
+            </Section>
+            <Section
+              title="어떤 글이 반응이 좋을까"
+              summary={<p className="tiny muted">글 길이, 사진·영상, 질문형, 이모지, 해시태그, 링크별 참여율 비교</p>}
+            >
               <p className="tiny muted">유형별 평균 참여율이에요. 진한 막대가 가장 좋은 쪽이에요.</p>
               <FeatureBars features={view.features} />
-            </section>
+            </Section>
             <AiPanel key={days} posts={view.posts} periodLabel={`최근 ${periodLabel}`} />
           </>
         )}
 
-        {data && tab !== "리포트" && <p className="tiny muted footnote">마지막 동기화 {date(data.fetchedAt)} · 최근 글 {data.posts.length}개 기준</p>}
+        {data && needsData && <p className="tiny muted footnote">마지막 동기화 {date(data.fetchedAt)} · 최근 글 {data.posts.length}개 기준</p>}
       </main>
     </div>
   );
