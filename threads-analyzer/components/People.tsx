@@ -58,7 +58,9 @@ function PeopleList({ onSelect }: { onSelect: (id: string) => void }) {
                     .join(" · ")}
                 </p>
               ) : (
-                <p className="tiny muted">기억한 정보 없음 · 대화 {p.commentCount}번</p>
+                <p className="tiny muted">
+                  {p.pending ? "아직 정리 전" : "본인 이야기 없음"} · 대화 {p.commentCount}번
+                </p>
               )}
             </button>
           </li>

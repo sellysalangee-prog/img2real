@@ -67,6 +67,8 @@ export type PersonCard = {
   notes: string;
   forgotten: boolean;
   commentCount: number;
+  /** 아직 정보 정리를 안 한 댓글이 있으면 true */
+  pending: boolean;
   facts: Fact[];
 };
 
@@ -89,6 +91,8 @@ export type PersonSummary = {
   lastSeenAt: string;
   commentCount: number;
   openCount: number;
+  /** 아직 정보 정리를 안 한 댓글이 있으면 true */
+  pending: boolean;
   facts: Fact[];
 };
 

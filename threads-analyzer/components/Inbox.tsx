@@ -22,6 +22,7 @@ export default function Inbox({ onOpenPerson }: { onOpenPerson: (id: string) => 
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   const load = useCallback(async (f: FilterKey) => {
     setError(null);
@@ -40,16 +41,28 @@ export default function Inbox({ onOpenPerson }: { onOpenPerson: (id: string) => 
     setSyncing(true);
     setNotice(null);
     try {
-      const r = await api<SyncResult>("/api/sync", { method: "POST" });
-      const parts = [`새 댓글 ${r.newComments}개`, `새로 기억한 정보 ${r.factsAdded}개`];
-      if (r.remaining) parts.push(`아직 정리 못 한 사람 ${r.remaining}명 (한 번 더 누르면 이어서 정리해요)`);
-      if (r.errors.length) parts.push(`일부 오류: ${r.errors[0]}`);
+      setProgress("댓글을 모으고 있어요…");
+      const first = await api<SyncResult>("/api/sync", { method: "POST" });
+      let { factsAdded, remaining, errors } = first;
+      // 정리 못 한 사람이 남아 있으면 줄어들지 않을 때까지 이어서 정리합니다.
+      for (let round = 0; remaining > 0 && errors.length === 0 && round < 30; round++) {
+        setProgress(`사람별 정보를 정리하고 있어요… 남은 사람 ${remaining}명`);
+        const r = await api<Omit<SyncResult, "newComments">>("/api/sync/extract", { method: "POST" });
+        factsAdded += r.factsAdded;
+        errors = r.errors;
+        if (r.remaining >= remaining && r.peopleUpdated === 0) break;
+        remaining = r.remaining;
+      }
+      const parts = [`새 댓글 ${first.newComments}개`, `새로 기억한 정보 ${factsAdded}개`];
+      if (remaining) parts.push(`아직 정리 못 한 사람 ${remaining}명 (다시 누르면 이어서 정리해요)`);
+      if (errors.length) parts.push(`오류: ${errors[0]}`);
       setNotice(parts.join(" · "));
       await load(filter);
     } catch (e) {
       setNotice(errorMessage(e));
     } finally {
       setSyncing(false);
+      setProgress(null);
     }
   }
 
@@ -83,7 +96,11 @@ export default function Inbox({ onOpenPerson }: { onOpenPerson: (id: string) => 
           {syncing ? "댓글 모으는 중…" : "새 댓글 가져오기"}
         </button>
       </div>
-      {syncing && <p className="tiny muted">댓글을 모으고 사람별 정보를 정리하고 있어요. 처음엔 1~2분 걸릴 수 있어요.</p>}
+      {syncing && (
+        <p className="notice" role="status">
+          {progress ?? "준비 중…"} 사람이 많으면 몇 분 걸릴 수 있어요. 이 화면을 열어 둔 채로 기다려 주세요.
+        </p>
+      )}
       {notice && <p className="notice">{notice}</p>}
       {error && <p className="error">{error}</p>}
 
