@@ -1,6 +1,7 @@
 import { jsonError, readJson, UserError, withRole } from "@/lib/api";
 import { claimAttachments } from "@/lib/attachments";
 import { AiError, streamChat } from "@/lib/claude";
+import { getGuidelines } from "@/lib/settings";
 import { buildMessages, buildSystem } from "@/lib/context";
 import {
   addAssistantMessage,
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
       : [];
     if (!text && !attachmentIds.length) throw new UserError("메시지를 적어 주세요.");
     if (text.length > MAX_TEXT) throw new UserError("메시지가 너무 길어요. 긴 코드는 파일로 올려 주세요.");
+    if (!(await getGuidelines()).trim()) throw new UserError("아직 준비가 덜 됐어요. 관리자에게 지침을 먼저 넣어 달라고 해 주세요.", 503);
 
     let conversationId = typeof body.conversationId === "number" ? body.conversationId : null;
     let isNew = false;

@@ -8,13 +8,6 @@ type SystemBlock = Anthropic.Beta.BetaTextBlockParam;
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentParam = Anthropic.Beta.BetaContentBlockParam;
 
-/** 앱이 항상 덧붙이는 규칙. "프로젝트에 저장" 버튼이 동작하려면 이 형식이 필요합니다. */
-const APP_RULES = `[앱 규칙]
-- 코드는 언어를 적은 코드 블록으로 써. 로블록스 스크립트는 \`\`\`lua 로 시작해.
-- 계획, 정리, 설명서처럼 프로젝트에 저장해 둘 만한 문서를 쓸 때는 문서 전체를 코드 블록 하나로 감싸고, 첫 줄을 \`\`\`markdown 파일이름.md 형식으로 써. 파일이름은 영어 소문자와 하이픈으로 (예: \`\`\`markdown game-plan.md).
-- 이미 프로젝트 지식에 있는 문서를 고쳐 쓸 때는 같은 파일이름을 써. 그러면 새 버전으로 저장돼.
-- 아래 <project_knowledge>는 지금까지 저장된 프로젝트 문서들이야. 이름마다 가장 새 버전만 들어 있어.`;
-
 /**
  * Claude에게 보낼 맥락 조각들. 순서대로 system에 들어갑니다.
  * 나중에 기억(memory) 같은 조각을 여기에 추가하면 됩니다.
@@ -23,14 +16,15 @@ type ContextSource = () => Promise<string | null>;
 
 const knowledgeSource: ContextSource = async () => {
   const docs = await latestKnowledge();
-  if (!docs.length) return "<project_knowledge>\n(아직 저장된 문서가 없어)\n</project_knowledge>";
+  if (!docs.length) return null;
   const body = docs
     .map((d) => `<document name="${d.name}" version="${d.version}" saved="${d.createdAt.slice(0, 10)}">\n${d.content}\n</document>`)
     .join("\n\n");
   return `<project_knowledge>\n${body}\n</project_knowledge>`;
 };
 
-const CONTEXT_SOURCES: ContextSource[] = [getGuidelines, async () => APP_RULES, knowledgeSource];
+/** 지침(관리자 입력) 다음에 프로젝트 지식이 붙습니다. 지침 문구는 코드에 두지 않습니다. */
+const CONTEXT_SOURCES: ContextSource[] = [getGuidelines, knowledgeSource];
 
 export async function buildSystem(): Promise<SystemBlock[]> {
   const texts = await Promise.all(CONTEXT_SOURCES.map((source) => source()));
