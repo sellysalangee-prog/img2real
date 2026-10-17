@@ -19,12 +19,15 @@
 | `ANTHROPIC_API_KEY` | Claude API 키 |
 | `ADMIN_PASSWORD` | 관리자 비밀번호. 대소문자를 구분합니다. |
 | `SESSION_SECRET` | 32자 이상 무작위 문자열. 로그인 쿠키와 아이 비밀번호 암호화에 사용합니다. 변경하면 저장된 아이 비밀번호를 다시 설정해야 합니다. |
-| `DATABASE_URL` | PostgreSQL 연결 주소 (Vercel Postgres/Neon은 `POSTGRES_URL`도 인식합니다) |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 저장소 토큰. 저장소를 프로젝트에 연결하면 자동으로 들어갑니다. |
+| `DATABASE_URL` | PostgreSQL 연결 주소 (`POSTGRES_URL`도 인식합니다). Neon을 연결할 때 Custom Prefix를 `DATABASE`로 입력하면 이 이름으로 생성됩니다. |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 저장소 토큰. 첨부 업로드 토큰 발급에 반드시 필요합니다. |
 
 ## 3. 처음 사용 순서
 
-1. Vercel 프로젝트의 **Storage → Create → Blob**에서 저장소를 만들고, 접근 방식을 **Private**로 정한 뒤 이 프로젝트에 연결합니다.
+1. **Storage → Create Storage**에서 Neon(DB)과 Blob(접근 방식 **Private**)을 각각 만들고 이 프로젝트에만 연결합니다.
+   - Neon 연결 시 Custom Prefix: `DATABASE`
+   - Blob 연결 시 Custom Prefix: `BLOB`, **Add a read-write token env var to this connection** 체크
+   - 연결 후에는 다시 배포해야 환경 변수가 적용됩니다.
 2. 나머지 환경 변수를 넣고 배포합니다.
 3. 관리자 비밀번호로 로그인합니다.
 4. **아이 비밀번호** 탭에서 아이 비밀번호를 정합니다. 정하기 전에는 아이가 로그인할 수 없습니다.
