@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages (conversation_id, id);
 
--- kind: image | pdf | text
+-- kind: image | pdf | text. 파일 내용은 Vercel Blob(비공개)에 두고, 여기에는 위치만 저장합니다.
 CREATE TABLE IF NOT EXISTS attachments (
   id BIGSERIAL PRIMARY KEY,
   conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS attachments (
   name TEXT NOT NULL,
   media_type TEXT NOT NULL,
   size INT NOT NULL,
-  data BYTEA NOT NULL,
+  blob_url TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

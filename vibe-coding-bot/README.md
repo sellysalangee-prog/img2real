@@ -8,6 +8,7 @@
 |---|---|
 | 프레임워크 | Next.js 15 (App Router) |
 | 저장소 | PostgreSQL (첫 요청 때 테이블 자동 생성) |
+| 첨부 파일 | Vercel Blob, 비공개(private) 저장소. 브라우저가 Blob에 직접 올리고, 읽기는 서버만 합니다. |
 | Claude 호출 | `@anthropic-ai/sdk`, 서버에서만 호출. API 키는 브라우저로 전달되지 않습니다. |
 | 배포 | Vercel 기준 (Root Directory: `vibe-coding-bot`) |
 
@@ -19,13 +20,15 @@
 | `ADMIN_PASSWORD` | 관리자 비밀번호. 대소문자를 구분합니다. |
 | `SESSION_SECRET` | 32자 이상 무작위 문자열. 로그인 쿠키와 아이 비밀번호 암호화에 사용합니다. 변경하면 저장된 아이 비밀번호를 다시 설정해야 합니다. |
 | `DATABASE_URL` | PostgreSQL 연결 주소 (Vercel Postgres/Neon은 `POSTGRES_URL`도 인식합니다) |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 저장소 토큰. 저장소를 프로젝트에 연결하면 자동으로 들어갑니다. |
 
 ## 3. 처음 사용 순서
 
-1. 환경 변수를 넣고 배포합니다.
-2. 관리자 비밀번호로 로그인합니다.
-3. **아이 비밀번호** 탭에서 아이 비밀번호를 정합니다. 정하기 전에는 아이가 로그인할 수 없습니다.
-4. 필요하면 **지침** 탭에서 기본 지침을 수정합니다.
+1. Vercel 프로젝트의 **Storage → Create → Blob**에서 저장소를 만들고, 접근 방식을 **Private**로 정한 뒤 이 프로젝트에 연결합니다.
+2. 나머지 환경 변수를 넣고 배포합니다.
+3. 관리자 비밀번호로 로그인합니다.
+4. **아이 비밀번호** 탭에서 아이 비밀번호를 정합니다. 정하기 전에는 아이가 로그인할 수 없습니다.
+5. 필요하면 **지침** 탭에서 기본 지침을 수정합니다.
 
 ## 4. 기능 규격
 
@@ -44,7 +47,7 @@
 | 왼쪽 메뉴 | 새 대화, 지난 대화 목록, 프로젝트 지식 목록. 모바일에서는 ☰ 버튼으로 엽니다. |
 | 대화창 | 답이 실시간으로 표시됩니다. 코드 블록마다 **복사** 버튼이 있습니다. |
 | 문서 블록 | Claude가 ` ```markdown 파일이름.md ` 블록으로 문서를 쓰면 아래에 **프로젝트에 저장** 버튼이 표시됩니다. 이름을 확인·수정한 뒤 저장합니다. |
-| 첨부 | 사진(png, jpg, gif, webp), PDF, 글자 파일(lua, txt, md, json 등). 4MB까지. 큰 사진은 올리기 전에 긴 변 1568px로 줄입니다. PC에서는 스크린샷 붙여넣기(Ctrl+V)도 됩니다. |
+| 첨부 | 사진(png, jpg, gif, webp) 5MB, PDF 20MB, 글자 파일(lua, txt, md, json 등) 1MB까지. 큰 사진은 올리기 전에 긴 변 1568px로 줄입니다. PC에서는 스크린샷 붙여넣기(Ctrl+V)도 됩니다. |
 | 프로젝트 지식 | 문서를 누르면 모든 버전을 골라 볼 수 있습니다. 삭제 버튼은 없습니다. |
 
 ### 4.3 관리자 화면 (`/admin`)
@@ -87,7 +90,7 @@
 | `login_attempts` | IP별 실패 횟수, 잠금 시각 |
 | `conversations` | 대화 제목, 시각 |
 | `messages` | 대화 내용. Claude 응답은 API 블록 그대로 저장. 토큰 사용량(`usage`) 기록 |
-| `attachments` | 첨부 파일 원본 (bytea) |
+| `attachments` | 첨부 파일 정보와 Blob 주소. 파일 원본은 Vercel Blob에 있습니다. |
 | `knowledge_docs` | 프로젝트 지식. `(name, version)` 단위로 모든 버전 보관 |
 
 ## 6. 이후 확장 지점
@@ -104,7 +107,7 @@
 ```bash
 cd vibe-coding-bot
 npm install
-DATABASE_URL=postgres://... ADMIN_PASSWORD=... SESSION_SECRET=... ANTHROPIC_API_KEY=... npm run dev
+DATABASE_URL=postgres://... ADMIN_PASSWORD=... SESSION_SECRET=... ANTHROPIC_API_KEY=... BLOB_READ_WRITE_TOKEN=... npm run dev
 ```
 
 ## 8. 알려진 제한
@@ -112,3 +115,4 @@ DATABASE_URL=postgres://... ADMIN_PASSWORD=... SESSION_SECRET=... ANTHROPIC_API_
 - 답 하나가 5분(`maxDuration = 300`)을 넘으면 Vercel이 연결을 끊습니다.
 - 첨부 사진은 매 요청마다 다시 전송됩니다. 사진이 많은 긴 대화는 새 대화로 시작하는 것이 좋습니다.
 - 대화 삭제 기능은 없습니다.
+- 첨부를 올린 뒤 보내지 않고 빼거나 화면을 닫으면, 그 파일은 Blob에 남습니다. 자동 정리 기능은 없습니다.

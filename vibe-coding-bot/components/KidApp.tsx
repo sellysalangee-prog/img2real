@@ -1,5 +1,6 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AttachmentInfo } from "@/lib/attachments";
 import type { ConversationSummary, StoredMessage, UserPart } from "@/lib/conversations";
@@ -12,6 +13,16 @@ type Pending = AttachmentInfo & { previewUrl?: string };
 
 const MAX_IMAGE_SIDE = 1568;
 const FILE_ACCEPT = ".lua,.luau,.txt,.md,.json,.csv,.pdf,.xml,.log";
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const TEXT_EXT = /\.(lua|luau|txt|md|markdown|json|csv|xml|html|css|js|ts|py|toml|yaml|yml|log)$/i;
+
+/** Blob에 올릴 형식. lua 같은 파일은 브라우저가 형식을 모르므로 text/plain으로 맞춥니다. */
+function uploadType(file: File): string | null {
+  if (IMAGE_TYPES.includes(file.type)) return file.type;
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) return "application/pdf";
+  if (file.type.startsWith("text/") || TEXT_EXT.test(file.name)) return "text/plain";
+  return null;
+}
 
 /** 큰 스크린샷은 Claude가 읽기 좋은 크기로 줄여서 올립니다. */
 async function shrinkImage(file: File): Promise<File> {
@@ -94,9 +105,14 @@ export function KidApp() {
       setUploading((n) => n + 1);
       try {
         const file = original.type.startsWith("image/") ? await shrinkImage(original) : original;
-        const form = new FormData();
-        form.append("file", file);
-        const { attachment } = await api<{ attachment: AttachmentInfo }>("/api/attachments", { method: "POST", body: form });
+        const contentType = uploadType(file);
+        if (!contentType) throw new Error("사진(png, jpg, gif, webp), PDF, 글자로 된 파일(lua, txt, md 등)만 올릴 수 있어요.");
+        const blob = await upload(`attachments/${file.name.replace(/[^\w.\-가-힣]+/g, "_")}`, file, {
+          access: "private",
+          handleUploadUrl: "/api/attachments/upload",
+          contentType,
+        });
+        const { attachment } = await sendJson<{ attachment: AttachmentInfo }>("/api/attachments", { url: blob.url, name: file.name });
         const previewUrl = attachment.kind === "image" ? URL.createObjectURL(file) : undefined;
         setPending((p) => [...p, { ...attachment, previewUrl }]);
       } catch (e) {
