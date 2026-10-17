@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { readJson, UserError, withRole } from "@/lib/api";
 import { env } from "@/lib/env";
-import { DEFAULT_GUIDELINES, getGuidelines, getKidPassword, setGuidelines, setKidPassword } from "@/lib/settings";
+import { getGuidelines, getKidPassword, setGuidelines, setKidPassword } from "@/lib/settings";
 
 export async function GET() {
   return withRole(["admin"], async () =>
     NextResponse.json({
       guidelines: await getGuidelines(),
-      defaultGuidelines: DEFAULT_GUIDELINES,
       kidPassword: await getKidPassword(),
     }),
   );

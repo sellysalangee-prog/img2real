@@ -15,7 +15,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "password", label: "아이 비밀번호" },
 ];
 
-type Settings = { guidelines: string; defaultGuidelines: string; kidPassword: string | null };
+type Settings = { guidelines: string; kidPassword: string | null };
 
 function Conversations() {
   const [list, setList] = useState<ConversationSummary[]>([]);
@@ -83,8 +83,12 @@ function Guidelines({ settings, onSaved }: { settings: Settings; onSaved: (s: Se
   return (
     <div className="panel">
       <p className="muted small">
-        매 질문마다 이 지침이 Claude에게 먼저 전달됩니다. 그 뒤에 앱 규칙(코드 블록·문서 저장 형식)과 프로젝트 지식 문서(이름마다 최신
-        버전)가 자동으로 붙습니다.
+        매 질문마다 이 지침이 Claude에게 먼저 전달되고, 그 뒤에 프로젝트 지식 문서(이름마다 최신 버전)가 붙습니다. 지침은 이
+        화면에서 입력한 내용만 DB에 저장되며, 지침이 비어 있으면 아이 화면에서 질문을 보낼 수 없습니다.
+      </p>
+      <p className="muted small">
+        &quot;프로젝트에 저장&quot; 버튼은 Claude가 문서를 ```markdown 파일이름.md 로 시작하는 코드 블록 하나에 담아 쓸 때 표시됩니다.
+        버튼이 필요하면 이 형식을 지침에 적어 주세요.
       </p>
       <textarea className="editor" value={text} onChange={(e) => setText(e.target.value)} rows={18} />
       <div className="actions">
@@ -103,9 +107,6 @@ function Guidelines({ settings, onSaved }: { settings: Settings; onSaved: (s: Se
           }}
         >
           저장
-        </button>
-        <button type="button" className="btn" onClick={() => setText(settings.defaultGuidelines)}>
-          기본 지침 불러오기
         </button>
         {changed && <span className="muted small">저장하지 않은 변경이 있습니다</span>}
         {status && !changed && <span className="ok">{status}</span>}
