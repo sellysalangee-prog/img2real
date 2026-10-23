@@ -1,0 +1,519 @@
+<title>imag2REAL 우주 시안</title>
+<style>
+/* Layout: 화면 전체가 3D 우주. 위 왼쪽 워드마크, 위 오른쪽 문의, 아래 가운데 항로(내비), 오른쪽 정보 패널 */
+:root {
+  --space: #05060A;
+  --ink: #F2F3F5;
+  --ink-2: #A9ADB6;
+  --ink-3: #6E727B;
+  --line: #2A2D35;
+  --panel: rgba(14, 15, 20, 0.86);
+  --signal: #FFD400;
+  --imag: #5FD8FF;
+  --two: #9B7BFF;
+  --real: #FF4FA8;
+  --display: "Sora", "Noto Sans KR", system-ui, sans-serif;
+  --body: "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--space); color: var(--ink); font-family: var(--body); font-style: normal; }
+* { font-style: normal; box-sizing: border-box; }
+#stage { position: fixed; inset: 0; display: block; width: 100%; height: 100%; cursor: grab; }
+#stage.dragging { cursor: grabbing; }
+
+.labels { position: fixed; inset: 0; pointer-events: none; }
+.lbl { position: absolute; left: 0; top: 0; transform: translate(-50%, 0); pointer-events: auto; background: none; border: 0; padding: 4px 8px; color: var(--ink-2); font-family: var(--body); font-size: 13px; letter-spacing: 0.02em; white-space: nowrap; cursor: pointer; border-radius: 4px; transition: color .2s; }
+.lbl:hover, .lbl.on { color: var(--ink); }
+.lbl.on::after { content: ""; display: block; height: 2px; margin-top: 3px; background: var(--signal); }
+.lbl small { display: block; font-size: 11px; color: var(--ink-3); }
+.lbl:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.top { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-block: calc(18px + env(safe-area-inset-top, 0px)) 0; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); pointer-events: none; }
+.mark { pointer-events: auto; background: none; border: 0; padding: 4px 0; cursor: pointer; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; color: var(--ink); }
+.mark .i { color: var(--imag); } .mark .t { color: var(--two); } .mark .r { color: var(--real); }
+.kakao { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 22px; background: var(--signal); color: #111; font-weight: 700; font-size: 14px; text-decoration: none; }
+
+.route { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 4px; padding: 6px; border-radius: 28px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(8px); max-width: calc(100% - 32px); overflow-x: auto; }
+.route button { flex-shrink: 0; min-height: 40px; padding: 0 16px; border: 0; border-radius: 20px; background: transparent; color: var(--ink-2); font-family: var(--body); font-size: 14px; cursor: pointer; }
+.route button:hover { color: var(--ink); }
+.route button.on { background: var(--ink); color: #111; font-weight: 700; }
+
+.panel { position: fixed; right: max(24px, env(safe-area-inset-right, 0px)); top: 50%; transform: translateY(-50%); width: 340px; max-height: calc(100% - 200px); overflow-y: auto; padding: 26px 26px 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 14px; transition: opacity .35s; }
+.panel.hide { opacity: 0; pointer-events: none; }
+.eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.14em; color: var(--signal); }
+.panel h2 { margin: 0; font-size: 26px; line-height: 1.32; font-weight: 700; text-wrap: balance; }
+.panel p { margin: 0; font-size: 15px; line-height: 1.75; color: var(--ink-2); }
+.panel .foot { font-size: 12px; color: var(--ink-3); }
+.ph { color: var(--ink-3); }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: var(--body); text-align: left; cursor: pointer; }
+.row:hover { border-color: var(--ink-3); }
+.row .nm { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+.row .nm b { font-size: 15px; font-weight: 700; }
+.row .nm span { font-size: 12px; color: var(--ink-3); }
+.status { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.status.live { color: var(--signal); } .status.wait { color: var(--ink-3); }
+.steps { display: flex; flex-direction: column; gap: 10px; }
+.step { display: flex; gap: 12px; align-items: baseline; color: var(--ink-3); transition: color .3s; }
+.step b { font-size: 17px; width: 40px; flex-shrink: 0; }
+.step span { font-size: 14px; line-height: 1.6; }
+.step.on { color: var(--ink); } .step.on b { color: var(--signal); }
+.back { align-self: flex-start; background: none; border: 0; padding: 6px 0; color: var(--ink-2); font-family: var(--body); font-size: 13px; cursor: pointer; }
+.back:hover { color: var(--ink); }
+.cta { display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 26px; background: var(--signal); color: #111; font-size: 16px; font-weight: 700; text-decoration: none; }
+
+.hint { position: fixed; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); margin: 0; font-size: 12px; color: var(--ink-3); }
+.note { position: fixed; left: 50%; top: calc(76px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); margin: 0; padding: 8px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+
+.intro { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #000; transition: opacity 1.1s ease; z-index: 5; cursor: pointer; }
+.intro.gone { opacity: 0; pointer-events: none; }
+.intro .word { font-family: var(--display); font-weight: 800; font-size: clamp(48px, 9vw, 112px); letter-spacing: -0.03em; line-height: 1; }
+.intro .word .i { color: var(--imag); } .intro .word .t { color: var(--two); } .intro .word .r { color: var(--real); }
+.intro .kor { font-size: clamp(16px, 2vw, 22px); font-weight: 500; letter-spacing: 0.3em; color: #DADCE2; }
+.intro .cap { position: absolute; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); margin: 0; font-size: 12px; color: var(--ink-3); }
+
+@media (max-width: 760px) {
+  .panel { left: 16px; right: 16px; width: auto; top: auto; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); transform: none; max-height: 44%; }
+  .hint { display: none; }
+  .note { white-space: normal; width: calc(100% - 32px); text-align: center; }
+}
+@media (min-width: 761px) { .note { display: none; } }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@800&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+
+<canvas id="stage" aria-label="상상을 현실로 우주. 가운데 별 주위로 행성 세 개가 돌고, 가장자리에 다른 우주가 맞물려 있습니다."></canvas>
+<div class="labels" id="labels"></div>
+
+<header class="top">
+  <button class="mark" id="home" type="button" aria-label="처음 화면으로"><span class="i">imag</span><span class="t">2</span><span class="r">REAL</span></button>
+  <a class="kakao" href="http://pf.kakao.com/_AjymX/chat" target="_blank" rel="noopener" id="kakaoTop">카카오톡 문의</a>
+</header>
+
+<aside class="panel hide" id="panel" aria-live="polite"></aside>
+
+<nav class="route" id="route" aria-label="우주 항로"></nav>
+<p class="hint">드래그로 둘러보기 · 휠로 가까이 · 행성을 누르면 다가갑니다</p>
+<p class="note">PC용 시안입니다. 모바일 버전은 따로 만듭니다.</p>
+
+<div class="intro" id="intro" role="button" tabindex="0" aria-label="우주로 들어가기">
+  <div class="word"><span class="i">imag</span><span class="t">2</span><span class="r">REAL</span></div>
+  <div class="kor">상상을 현실로</div>
+  <p class="cap">인트로 v11 애니메이션 자리 · 누르면 바로 들어갑니다</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = s => document.querySelector(s);
+  const canvas = $('#stage');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060a);
+  scene.fog = new THREE.FogExp2(0x05060a, 0.006);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+  const root = new THREE.Group();
+  scene.add(root);
+
+  /* ===== 빛과 배경 별 ===== */
+  scene.add(new THREE.AmbientLight(0x3a4050, 0.9));
+  const sunLight = new THREE.PointLight(0xffefb8, 2.4, 0, 1.2);
+  root.add(sunLight);
+
+  function glowTexture(stops) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    stops.forEach(([o, col]) => gr.addColorStop(o, col));
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+  const yellowGlow = glowTexture([[0, 'rgba(255,240,170,1)'], [0.18, 'rgba(255,212,0,0.55)'], [0.5, 'rgba(255,180,0,0.12)'], [1, 'rgba(0,0,0,0)']]);
+  const whiteGlow = glowTexture([[0, 'rgba(255,255,255,1)'], [0.2, 'rgba(220,230,255,0.5)'], [1, 'rgba(0,0,0,0)']]);
+  const greyGlow = glowTexture([[0, 'rgba(150,155,165,0.9)'], [0.25, 'rgba(110,114,123,0.25)'], [1, 'rgba(0,0,0,0)']]);
+  const glow = (tex, size) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    s.scale.set(size, size, 1); return s;
+  };
+
+  {
+    const n = 2200, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const r = 260 + Math.random() * 300, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+      pos[i * 3] = r * Math.sin(ph) * Math.cos(th); pos[i * 3 + 1] = r * Math.cos(ph); pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 1.3, sizeAttenuation: false, transparent: true, opacity: 0.75, fog: false })));
+  }
+
+  /* ===== 가운데 별: 남희 ===== */
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(1.7, 48, 48), new THREE.MeshBasicMaterial({ color: 0xffd400 }));
+  root.add(sun);
+  const sunGlow = glow(yellowGlow, 13); root.add(sunGlow);
+
+  /* ===== 행성 ===== */
+  const PLANETS = [
+    { id: 'think', name: '씽크텔러 시스템', sub: 'ThinkTeller', desc: '[한 줄 소개]', r: 9, size: 1.25, speed: 0.2, phase: 0.4, tilt: 0.05, color: 0xdce3ec },
+    { id: 'book', name: '전자책', sub: '출판사 희망 메신저', desc: '출판사 희망 메신저에서 펴내는 전자책입니다. [한 줄 소개]', r: 13.5, size: 1.0, speed: 0.14, phase: 2.5, tilt: -0.08, color: 0xbfb6a8 },
+    { id: 'faces', name: '세 명의 얼굴 천재들', sub: 'IP · 위성 셋', desc: '대표의 IP입니다. 수재·하진·도혁 세 사람이 이 행성을 도는 위성입니다. [한 줄 소개]', r: 18.5, size: 1.6, speed: 0.09, phase: 4.6, tilt: 0.1, color: 0xf3f1ee }
+  ];
+  const planetMeshes = [];
+  PLANETS.forEach(p => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(p.r - 0.03, p.r + 0.03, 160), new THREE.MeshBasicMaterial({ color: 0x3a3e48, side: THREE.DoubleSide, transparent: true, opacity: 0.7 }));
+    ring.rotation.x = Math.PI / 2 + p.tilt; root.add(ring);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(p.size, 40, 40), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.85, metalness: 0.05 }));
+    m.userData.p = p; p.mesh = m; root.add(m); planetMeshes.push(m);
+    const halo = glow(whiteGlow, p.size * 3.2); halo.material.opacity = 0.18; m.add(halo); p.halo = halo;
+  });
+  // 얼굴 천재들 행성의 위성 셋: 빨강(수재), 금발(하진), 검정(도혁)
+  const MOONS = [0xd2463c, 0xe8c873, 0x2b2b30].map((c, i) => {
+    const mm = new THREE.Mesh(new THREE.SphereGeometry(0.32, 24, 24), new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 }));
+    PLANETS[2].mesh.add(mm); return { mesh: mm, a: i * (Math.PI * 2 / 3) };
+  });
+
+  /* ===== 초연결 실: 하나를 건드리면 이어진 실이 팽팽해졌다가 튕김 ===== */
+  const SEGS = 40, threads = [];
+  const sunPos = new THREE.Vector3();
+  function addThread(getA, getB, ids) {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((SEGS + 1) * 3), 3));
+    const mat = new THREE.LineBasicMaterial({ color: 0x8a8f9a, transparent: true, opacity: 0.22 });
+    const line = new THREE.Line(g, mat); root.add(line);
+    threads.push({ getA, getB, ids, g, mat, t0: -99, amp: 0 });
+  }
+  PLANETS.forEach(p => addThread(() => sunPos, () => p.mesh.position, [p.id]));
+  addThread(() => PLANETS[0].mesh.position, () => PLANETS[1].mesh.position, ['think', 'book']);
+  addThread(() => PLANETS[1].mesh.position, () => PLANETS[2].mesh.position, ['book', 'faces']);
+  addThread(() => PLANETS[0].mesh.position, () => PLANETS[2].mesh.position, ['think', 'faces']);
+  let clock = 0;
+  function pluck(id) {
+    threads.forEach(t => {
+      const direct = t.ids.includes(id);
+      t.t0 = clock + (direct ? 0 : 0.28); t.amp = direct ? 1.4 : 0.7;
+    });
+  }
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), dir = new THREE.Vector3(), perp = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  function updateThreads() {
+    threads.forEach(t => {
+      tmpA.copy(t.getA()); tmpB.copy(t.getB());
+      dir.subVectors(tmpB, tmpA); perp.crossVectors(dir, UP).normalize().multiplyScalar(0.35).add(new THREE.Vector3(0, 1, 0)).normalize();
+      const e = clock - t.t0;
+      const d = e >= 0 && e < 2.5 ? t.amp * Math.exp(-2.6 * e) * Math.sin(e * 22) : 0;
+      const arr = t.g.attributes.position.array;
+      for (let k = 0; k <= SEGS; k++) {
+        const u = k / SEGS, s = Math.sin(Math.PI * u) * d;
+        arr[k * 3] = tmpA.x + dir.x * u + perp.x * s;
+        arr[k * 3 + 1] = tmpA.y + dir.y * u + perp.y * s;
+        arr[k * 3 + 2] = tmpA.z + dir.z * u + perp.z * s;
+      }
+      t.g.attributes.position.needsUpdate = true;
+      const lit = e >= 0 && e < 1.6 ? Math.exp(-2 * e) : 0;
+      t.mat.opacity = 0.22 + 0.7 * lit;
+      t.mat.color.setRGB(0.54 + 0.46 * lit, 0.56 + 0.27 * lit, 0.6 - 0.6 * lit);
+    });
+  }
+
+  /* ===== 문제 해결: 흩어진 먼지 → 선으로 이어짐 → 고리로 정리 ===== */
+  const CLOUD = new THREE.Vector3(-30, 5, 10);
+  const NPTS = 30;
+  const scatterP = [], ringP = [];
+  for (let i = 0; i < NPTS; i++) scatterP.push(new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 9));
+  { // 가까운 점끼리 차례로 잇는 순서
+    const left = scatterP.slice(1), ord = [scatterP[0]];
+    while (left.length) { const last = ord[ord.length - 1]; let bi = 0; left.forEach((q, i) => { if (q.distanceTo(last) < left[bi].distanceTo(last)) bi = i; }); ord.push(left.splice(bi, 1)[0]); }
+    scatterP.splice(0, scatterP.length, ...ord);
+  }
+  for (let i = 0; i < NPTS; i++) { const a = i / NPTS * Math.PI * 2; ringP.push(new THREE.Vector3(Math.cos(a) * 3.6, Math.sin(a) * 3.6, 0)); }
+  const cloud = new THREE.Group(); cloud.position.copy(CLOUD); root.add(cloud);
+  const cPos = new Float32Array(NPTS * 3);
+  const cGeo = new THREE.BufferGeometry(); cGeo.setAttribute('position', new THREE.Float32BufferAttribute(cPos, 3));
+  const cPts = new THREE.Points(cGeo, new THREE.PointsMaterial({ color: 0xdfe3ea, size: 0.38, map: whiteGlow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  cloud.add(cPts);
+  const lGeo = new THREE.BufferGeometry(); lGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((NPTS + 1) * 3), 3));
+  const lMat = new THREE.LineBasicMaterial({ color: 0x9aa0ab, transparent: true, opacity: 0.6 });
+  const cLine = new THREE.Line(lGeo, lMat); cloud.add(cLine);
+  let probT = -1; // 문제 해결 섹션에 들어온 뒤 흐른 시간
+  const STAGE = [1.4, 4.2, 6.2]; // 나열 끝, 정의 끝, 해결 끝
+  function updateCloud(dt) {
+    if (probT >= 0) probT += dt;
+    const t = probT < 0 ? 0 : probT;
+    const solve = clamp((t - STAGE[1]) / (STAGE[2] - STAGE[1]));
+    const k = ease(solve);
+    const la = lGeo.attributes.position.array;
+    for (let i = 0; i < NPTS; i++) {
+      const s = scatterP[i], r = ringP[i];
+      const wob = (1 - k) * 0.25;
+      const x = s.x + (r.x - s.x) * k + Math.sin(clock * 0.9 + i) * wob;
+      const y = s.y + (r.y - s.y) * k + Math.cos(clock * 0.7 + i * 1.3) * wob;
+      const z = s.z + (r.z - s.z) * k;
+      cPos[i * 3] = x; cPos[i * 3 + 1] = y; cPos[i * 3 + 2] = z;
+      la[i * 3] = x; la[i * 3 + 1] = y; la[i * 3 + 2] = z;
+    }
+    la[NPTS * 3] = la[0]; la[NPTS * 3 + 1] = la[1]; la[NPTS * 3 + 2] = la[2];
+    cGeo.attributes.position.needsUpdate = true; lGeo.attributes.position.needsUpdate = true;
+    const draw = clamp((t - STAGE[0]) / (STAGE[1] - STAGE[0]));
+    lGeo.setDrawRange(0, Math.floor(draw * NPTS) + (solve > 0.98 ? 2 : 1));
+    cLine.visible = draw > 0;
+    lMat.color.setRGB(0.6 + 0.4 * k, 0.63 + 0.2 * k, 0.67 - 0.67 * k);
+    lMat.opacity = 0.5 + 0.4 * k;
+    cloud.lookAt(camera.position);
+    const stage = t < STAGE[0] ? 0 : t < STAGE[1] ? 1 : 2;
+    if (current === 'problem') document.querySelectorAll('.step').forEach((el, i) => el.classList.toggle('on', i === stage));
+  }
+
+  /* ===== 맡길 수 있는 일: 별자리 (켜진 별 둘, 꺼진 별 하나) ===== */
+  const CONST = new THREE.Vector3(26, 13, -14);
+  const SERVICES = [
+    { name: 'Ai 시스템 세팅', desc: '개인·기업 맞춤 시스템 세팅. 씽크텔러 시스템, 메모리 최적화', live: false, off: new THREE.Vector3(-3.8, 2.6, 0) },
+    { name: '마케팅 제작', desc: '영상, 홈페이지', live: true, off: new THREE.Vector3(3.4, 1.4, 0.5) },
+    { name: '맞춤 교육 솔루션', desc: '기업별 맞춤 교육', live: true, off: new THREE.Vector3(0.2, -3.2, -0.4) }
+  ];
+  const constellation = new THREE.Group(); constellation.position.copy(CONST); root.add(constellation);
+  SERVICES.forEach(s => {
+    const sp = glow(s.live ? yellowGlow : greyGlow, s.live ? 4.2 : 2.6); sp.position.copy(s.off); constellation.add(sp); s.sprite = sp;
+  });
+  {
+    const pts = [SERVICES[0].off, SERVICES[1].off, SERVICES[2].off, SERVICES[0].off];
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    const dl = new THREE.Line(g, new THREE.LineDashedMaterial({ color: 0x6e727b, dashSize: 0.4, gapSize: 0.3, transparent: true, opacity: 0.7 }));
+    dl.computeLineDistances(); constellation.add(dl);
+  }
+
+  /* ===== 도킹: 우주 가장자리 톱니에 맞물린 다른 우주 ===== */
+  const EDGE = 25;
+  function gear(radius, teeth, tube, color) {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.6 });
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 12, 96), mat));
+    const tg = new THREE.BoxGeometry(tube * 2.2, tube * 2.4, tube * 2.2);
+    for (let i = 0; i < teeth; i++) {
+      const a = i / teeth * Math.PI * 2, b = new THREE.Mesh(tg, mat);
+      b.position.set(Math.cos(a) * (radius + tube * 1.4), Math.sin(a) * (radius + tube * 1.4), 0); b.rotation.z = a; g.add(b);
+    }
+    return g;
+  }
+  const edgeGear = gear(EDGE, 120, 0.12, 0x5a5e68); edgeGear.rotation.x = Math.PI / 2; root.add(edgeGear);
+  const DOCKS = [
+    { name: '프레임링크', line: '영상으로 시작하는 모든 연결', tag: '', url: 'https://www.framelink.space/', ang: 3.6 },
+    { name: '아힘사 요가명상', line: '서울 용산에 위치한 요가와 명상 지도자 센터', tag: '브랜딩', url: 'https://ahimsa.co.kr/', ang: 5.0 },
+    { name: '모마음 요가명상', line: '서울 영등포에 위치한 도심 속 휴식공간', tag: '영상 제작', url: 'https://www.instagram.com/momaumyoga/', ang: 0.6 }
+  ];
+  DOCKS.forEach(d => {
+    const r = 3.2, g = gear(r, 16, 0.32, 0x9ea3ad);
+    const holder = new THREE.Group(); holder.rotation.x = Math.PI / 2;
+    const dist = EDGE + 0.12 * 2.6 + r + 0.32 * 2.6;
+    holder.position.set(Math.cos(d.ang) * dist, 0, Math.sin(d.ang) * dist);
+    holder.add(g); root.add(holder);
+    const core = glow(whiteGlow, 3); core.material.opacity = 0.5; holder.add(core);
+    d.gear = g; d.holder = holder;
+  });
+
+  /* ===== 라벨 ===== */
+  const labelsEl = $('#labels');
+  const labels = [];
+  function addLabel(html, getWorld, onClick, key, dy = 22) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'lbl'; b.innerHTML = html;
+    b.addEventListener('click', e => { e.stopPropagation(); onClick(); });
+    labelsEl.appendChild(b); labels.push({ el: b, getWorld, key, dy });
+  }
+  const w = new THREE.Vector3();
+  const worldOf = obj => () => obj.getWorldPosition(w).clone();
+  addLabel('남희<small>imag2REAL</small>', worldOf(sun), () => go('identity'), 'identity', 30);
+  PLANETS.forEach(p => addLabel(`${p.name}<small>${p.sub}</small>`, worldOf(p.mesh), () => go('planet:' + p.id), 'planet:' + p.id, 26));
+  addLabel('문제 해결<small>나열 · 정의 · 해결</small>', worldOf(cloud), () => go('problem'), 'problem', 70);
+  addLabel('맡길 수 있는 일<small>별자리</small>', worldOf(constellation), () => go('services'), 'services', 70);
+  DOCKS.forEach(d => addLabel(`${d.name}${d.tag ? `<small>${d.tag}</small>` : ''}`, worldOf(d.holder), () => go('docking'), 'docking', 60));
+  const proj = new THREE.Vector3();
+  function updateLabels() {
+    labels.forEach(l => {
+      proj.copy(l.getWorld()).project(camera);
+      const vis = proj.z < 1 && Math.abs(proj.x) < 1.1 && Math.abs(proj.y) < 1.1;
+      l.el.hidden = !vis;
+      if (!vis) return;
+      const x = (proj.x * 0.5 + 0.5) * innerWidth, y = (-proj.y * 0.5 + 0.5) * innerHeight + l.dy;
+      l.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, 0)`;
+      l.el.classList.toggle('on', current === l.key || (current === 'planets' && l.key.startsWith('planet:')));
+    });
+  }
+
+  /* ===== 카메라: 섹션마다 바라보는 자리 ===== */
+  const VIEWS = {
+    identity: { pos: () => new THREE.Vector3(0, 16, 46), look: () => new THREE.Vector3(6, 0, 0) },
+    problem: { pos: () => CLOUD.clone().add(new THREE.Vector3(10, 4, 14)), look: () => CLOUD.clone() },
+    planets: { pos: () => new THREE.Vector3(0, 34, 24), look: () => new THREE.Vector3(4, 0, 0) },
+    docking: { pos: () => new THREE.Vector3(0, 46, 58), look: () => new THREE.Vector3(6, 0, 0) },
+    services: { pos: () => CONST.clone().add(new THREE.Vector3(-4, 1, 16)), look: () => CONST.clone().add(new THREE.Vector3(2.5, 0, 0)) },
+    contact: { pos: () => new THREE.Vector3(0, 6, 30), look: () => new THREE.Vector3(5, 0, 0) }
+  };
+  PLANETS.forEach(p => {
+    VIEWS['planet:' + p.id] = {
+      pos: () => p.mesh.position.clone().add(p.mesh.position.clone().setY(0).normalize().multiplyScalar(p.size * 5).add(new THREE.Vector3(0, p.size * 2.2, 0))).add(new THREE.Vector3(0, 0, 0)),
+      look: () => p.mesh.position.clone().add(new THREE.Vector3(0, 0, 0))
+    };
+  });
+
+  let current = 'identity', zoom = 1, yaw = 0, pitch = 0;
+  const camPos = new THREE.Vector3(0, 0.6, 5), camLook = new THREE.Vector3();
+  function targetOf(key) {
+    const v = VIEWS[key];
+    const look = v.look(), pos = v.pos();
+    const off = pos.sub(look).multiplyScalar(zoom);
+    off.applyAxisAngle(UP, yaw);
+    const side = new THREE.Vector3().crossVectors(off, UP).normalize();
+    off.applyAxisAngle(side, pitch);
+    return { pos: root.localToWorld(look.clone().add(off)), look: root.localToWorld(look) };
+  }
+
+  /* ===== 패널 내용 ===== */
+  const SECTIONS = [
+    ['identity', '정체성'], ['problem', '문제 해결'], ['planets', '행성'], ['docking', '도킹'], ['services', '맡길 수 있는 일'], ['contact', '문의']
+  ];
+  const routeEl = $('#route');
+  SECTIONS.forEach(([k, n]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = n; b.dataset.k = k;
+    b.addEventListener('click', () => go(k)); routeEl.appendChild(b);
+  });
+  const panel = $('#panel');
+  const kakaoNote = '<p class="foot">상상을 현실로 카카오톡 채널 · pf.kakao.com/_AjymX</p>';
+  function panelHTML(key) {
+    if (key === 'identity') return `
+      <p class="eyebrow">정체성</p>
+      <h2>문제를 해결합니다.</h2>
+      <p>세상에서 제일 작은 기업의 문제를 나열합니다. 그리고 정의합니다. 그리고 해결합니다.</p>
+      <p>Ai 시대의 새로운 문제 해결법을 제시합니다.</p>
+      <p class="foot">크리에이티브 Ai 테크 기업 · 가운데 별이 이 우주의 주인입니다</p>`;
+    if (key === 'problem') return `
+      <p class="eyebrow">문제 해결</p>
+      <h2>흩어진 문제를<br>하나로 잇습니다</h2>
+      <div class="steps">
+        <div class="step"><b>나열</b><span>흩어진 문제를 꺼내 놓습니다</span></div>
+        <div class="step"><b>정의</b><span>점을 선으로 이어 무엇이 문제인지 밝힙니다</span></div>
+        <div class="step"><b>해결</b><span>이어진 선이 하나의 고리로 정리됩니다</span></div>
+      </div>
+      <p class="foot ph">[나열할 문제 목록 — 아직 정하지 않음]</p>
+      <button class="back" type="button" data-replay>다시 보기</button>`;
+    if (key === 'planets') return `
+      <p class="eyebrow">행성</p>
+      <h2>이 우주가<br>만든 것들</h2>
+      <div class="list">${PLANETS.map(p => `<button class="row" type="button" data-go="planet:${p.id}"><span class="nm"><b>${p.name}</b><span>${p.sub}</span></span></button>`).join('')}</div>
+      <p class="foot">행성을 누르면 다가갑니다. 행성을 건드리면 이어진 실이 함께 튕깁니다.</p>`;
+    if (key.startsWith('planet:')) {
+      const p = PLANETS.find(q => 'planet:' + q.id === key);
+      return `
+      <p class="eyebrow">행성</p>
+      <h2>${p.name}</h2>
+      <p>${p.desc.replace(/\[([^\]]+)\]/g, '<span class="ph">[$1]</span>')}</p>
+      <a href="#" class="foot">자세히 보기 <span class="ph">[링크]</span></a>
+      <button class="back" type="button" data-go="planets">← 행성 전체 보기</button>`;
+    }
+    if (key === 'docking') return `
+      <p class="eyebrow">도킹</p>
+      <h2>맞물려 돌아가는<br>다른 우주들</h2>
+      <p>한 사람의 우주가 이 우주와 맞물려 함께 돌아갑니다. 1인 기업도 한 사람의 우주입니다.</p>
+      <div class="list">${DOCKS.map(d => `<a class="row" href="${d.url}" target="_blank" rel="noopener"><span class="nm"><b>${d.name}</b><span>${d.line}</span></span>${d.tag ? `<span class="status wait">${d.tag}</span>` : ''}</a>`).join('')}</div>`;
+    if (key === 'services') return `
+      <p class="eyebrow">맡길 수 있는 일</p>
+      <h2>켜진 별 둘,<br>곧 켜질 별 하나</h2>
+      <div class="list">${SERVICES.map(s => `<div class="row" style="cursor:default"><span class="nm"><b>${s.name}</b><span>${s.desc}</span></span><span class="status ${s.live ? 'live' : 'wait'}">${s.live ? '운영 중' : '준비 중'}</span></div>`).join('')}</div>`;
+    if (key === 'contact') return `
+      <p class="eyebrow">문의</p>
+      <h2>상상한 것을<br>이야기해 주세요</h2>
+      <a class="cta" href="http://pf.kakao.com/_AjymX/chat" target="_blank" rel="noopener">카카오톡으로 문의하기</a>
+      ${kakaoNote}`;
+    return '';
+  }
+  panel.addEventListener('click', e => {
+    const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
+    if (e.target.closest('[data-replay]')) probT = 0;
+  });
+
+  function go(key) {
+    current = key; yaw = 0; pitch = 0; zoom = 1;
+    panel.classList.add('hide');
+    setTimeout(() => { panel.innerHTML = panelHTML(key); panel.classList.remove('hide'); }, reduce ? 0 : 260);
+    const sec = key.startsWith('planet:') ? 'planets' : key;
+    routeEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === sec));
+    if (key === 'problem') probT = 0;
+    if (key.startsWith('planet:')) pluck(key.slice(7));
+  }
+  $('#home').addEventListener('click', () => go('identity'));
+
+  /* ===== 조작: 드래그로 둘러보기, 휠로 가까이, 행성 누르기 ===== */
+  let drag = null, moved = 0;
+  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; moved = 0; canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; moved += Math.abs(dx) + Math.abs(dy);
+    yaw -= dx * 0.005; pitch = clamp(pitch - dy * 0.004, -0.6, 0.5);
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  canvas.addEventListener('pointerup', e => {
+    canvas.classList.remove('dragging'); drag = null;
+    if (moved > 6) return;
+    ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects([...planetMeshes, sun], false)[0];
+    if (!hit) return;
+    if (hit.object === sun) go('identity');
+    else { const id = hit.object.userData.p.id; if (current === 'planet:' + id) pluck(id); else go('planet:' + id); }
+  });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); zoom = clamp(zoom * (1 + e.deltaY * 0.001), 0.45, 1.8); }, { passive: false });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && current.startsWith('planet:')) go('planets'); });
+
+  /* ===== 인트로 → 우주 ===== */
+  const intro = $('#intro');
+  let entered = false;
+  function enter() {
+    if (entered) return; entered = true;
+    intro.classList.add('gone');
+    go('identity');
+  }
+  intro.addEventListener('click', enter);
+  intro.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enter(); } });
+  setTimeout(enter, reduce ? 0 : 2600);
+
+  /* ===== 반복 ===== */
+  function clamp(v, a = 0, b = 1) { return v < a ? a : v > b ? b : v; }
+  function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function resize() {
+    const W = innerWidth, H = innerHeight;
+    renderer.setSize(W, H, false); camera.aspect = W / H;
+    camera.setViewOffset(W, H, W > 760 ? W * 0.09 : 0, W > 760 ? 0 : H * 0.12, W, H);
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize); resize();
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const sp = reduce ? 0.25 : 1;
+    clock += dt;
+    root.rotation.y += dt * 0.012 * sp;
+    PLANETS.forEach(p => {
+      const a = p.phase + clock * p.speed * sp;
+      p.mesh.position.set(Math.cos(a) * p.r, Math.sin(a) * p.r * Math.sin(p.tilt), Math.sin(a) * p.r);
+      p.mesh.rotation.y += dt * 0.3;
+      p.halo.material.opacity = current === 'planet:' + p.id ? 0.35 : 0.16;
+    });
+    MOONS.forEach((m, i) => { const a = m.a + clock * 0.9 * sp; m.mesh.position.set(Math.cos(a) * 2.6, Math.sin(a * 1.3) * 0.5, Math.sin(a) * 2.6); });
+    sunGlow.scale.setScalar(13 + Math.sin(clock * 1.4) * 0.6);
+    edgeGear.rotation.z += dt * 0.03 * sp;
+    DOCKS.forEach(d => { d.gear.rotation.z -= dt * 0.03 * sp * (EDGE / 3.2); });
+    SERVICES[0].sprite.material.opacity = 0.55 + 0.15 * Math.sin(clock * 0.8);
+    updateThreads();
+    updateCloud(dt);
+    root.updateMatrixWorld();
+    if (entered) {
+      const t = targetOf(current);
+      const k = 1 - Math.exp(-dt * (reduce ? 8 : 1.8));
+      camPos.lerp(t.pos, k); camLook.lerp(t.look, k);
+    }
+    camera.position.copy(camPos); camera.lookAt(camLook);
+    renderer.render(scene, camera);
+    updateLabels();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
