@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>imag2REAL 상상을 현실로 — 히어로 영상 v11</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@800&family=Noto+Sans+KR:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000000;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #000000; } }
+  :root[data-theme="dark"] { --bg: #000000; }
+  html, body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; }
+  body { background: var(--bg); }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="logo" role="img" aria-label="imag2REAL 상상을 현실로 히어로 영상"></canvas>
+<script>
+(() => {
+  /* ===== 기본 설정 ===== */
+  const cv = document.getElementById('logo');
+  const ctx = cv.getContext('2d');
+  const oc = document.createElement('canvas');
+  const octx = oc.getContext('2d', { willReadFrequently: true });
+  const wc = document.createElement('canvas');
+  const wctx = wc.getContext('2d');
+
+  const FONT = 'Sora, "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
+  const KFONT = '"Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", sans-serif';
+  const KOR = '상상을 현실로';
+
+  // 연출 시간표(초) — 기획서 4번
+  const T = {
+    seedS: 0.3,                   // i 윗점 자리에 첫 별
+    gatherS: 0.8, gatherD: 2.0,   // 점: 별 먼지가 i로 끌려와 모임 (+0.4초 멈춤)
+    s1S: 3.4, s1D: 0.5,           // i → 2 흐름선 (i 완성 후 멈춤 0.2초)
+    rideS: 3.75, rideD: 1.25,     // 보라 입자가 i에서 흐름선을 타고 2의 왼쪽 아래로
+    twoS: 4.5, twoD: 1.1,         // 선: 입자가 도착한 자리에서 2가 번져 나감
+    s2S: 5.6, s2D: 0.4,           // 2 → R 흐름선
+    rLineS: 5.8, rLineD: 0.9,     // 선 → 면: R 윤곽선
+    fillS: 6.9,                   // 면: 입자가 흐름선 → 2의 테두리를 한 바퀴 → 흐름선을 타고 R로
+    rOn: 8.9,                     // 점화
+    expS: 10.2, expD: 1.2,        // 은하수 펼침 (그 전 1.3초 i2R 유지)
+    realOn: 11.6,                 // REAL 네온 점화
+    korS: 12.0, korD: 1.2,        // 한글 등장
+    holdE: 20.2,                  // 7초 정지 끝
+    disD: 1.4,                    // 흩어짐
+    cycle: 21.8
+  };
+
+  const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const eio = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const eo = t => 1 - Math.pow(1 - t, 3);
+  const TAU = Math.PI * 2;
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+
+  let W, H, DPR, L, P = [], stars = [], sparks = [], cyc0 = 0, lastW = 0, lastH = 0;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ===== 레이아웃: 압축(i2R) / 펼침(imag2REAL) ===== */
+  function buildLayout() {
+    const cx = W / 2;
+    const cy = H * 0.45;
+
+    // 압축 상태 i2R
+    const narrow = W < 600;
+    const F1 = Math.min(W * (narrow ? 0.36 : 0.3), H * 0.34);
+    octx.font = `800 ${F1}px ${FONT}`;
+    const wi = octx.measureText('i').width;
+    const w2 = octx.measureText('2').width;
+    const wR = octx.measureText('R').width;
+    const g1 = F1 * 0.03;
+    const tot1 = wi + w2 + wR + g1 * 2;
+    const x1 = cx - tot1 / 2;
+    const b1 = cy + F1 * 0.36;
+    const A = {
+      F: F1, base: b1,
+      i: { t: 'i', x: x1, w: wi },
+      two: { t: '2', x: x1 + wi + g1, w: w2 },
+      r: { t: 'R', x: x1 + wi + g1 + w2 + g1, w: wR }
+    };
+
+    // 펼침 상태 imag2REAL
+    octx.font = `800 100px ${FONT}`;
+    const m1 = octx.measureText('imag').width;
+    const m2 = octx.measureText('2').width;
+    const m3 = octx.measureText('REAL').width;
+    const g = 3;
+    const totU = m1 + m2 + m3 + g * 2;
+    const F2 = Math.min((W * (narrow ? 0.92 : 0.86)) / totU * 100, H * 0.19, F1 * 0.9);
+    const k = F2 / 100;
+    const x2 = cx - (totU * k) / 2;
+    const b2 = cy + F2 * 0.36;
+    const B = {
+      F: F2, base: b2,
+      i: { t: 'imag', x: x2, w: m1 * k },
+      two: { t: '2', x: x2 + (m1 + g) * k, w: m2 * k },
+      r: { t: 'REAL', x: x2 + (m1 + m2 + g * 2) * k, w: m3 * k }
+    };
+
+    // 한글
+    const KF = Math.max(15, Math.min(F2 * 0.26, 40));
+    octx.font = `500 ${KF}px ${KFONT}`;
+    const sp = KF * 0.14;
+    const KCOL = ['hsl(190,100%,74%)', 'hsl(190,100%,74%)', 'hsl(262,100%,80%)', null, 'hsl(330,100%,76%)', 'hsl(330,100%,76%)', 'hsl(330,100%,76%)'];
+    const chars = [...KOR].map((c, i) => ({ c, w: c === ' ' ? KF * 0.95 : octx.measureText(c).width, col: KCOL[i] }));
+    const ktot = chars.reduce((s, o) => s + o.w, 0) + sp * (chars.length - 1);
+    let kx = cx - ktot / 2;
+    chars.forEach(o => { o.x = kx; kx += o.w + sp; });
+    const ky = b2 + F2 * 0.3 + KF * 1.35;
+
+    L = { cx, cy, A, B, KF, chars, ky, kx0: cx - ktot / 2, kx1: cx + ktot / 2, narrow };
+  }
+
+  /* ===== 글자 겉테두리 따라가기 ===== */
+  // 글자를 칠한 뒤 바깥 윤곽을 한 바퀴 따라가서 순서대로 점을 돌려줌
+  function traceOutline(txt, x, base, F) {
+    octx.clearRect(0, 0, oc.width, oc.height);
+    octx.font = `800 ${F}px ${FONT}`;
+    octx.fillStyle = '#fff';
+    octx.textBaseline = 'alphabetic';
+    octx.fillText(txt, x, base);
+    const m = octx.measureText(txt);
+    const x0 = Math.max(0, Math.floor(x - 3)), y0 = Math.max(0, Math.floor(base - m.actualBoundingBoxAscent - 3));
+    const x1 = Math.min(oc.width, Math.ceil(x + m.width + 3)), y1 = Math.min(oc.height, Math.ceil(base + m.actualBoundingBoxDescent + 3));
+    if (x1 <= x0 || y1 <= y0) return [];
+    const w = x1 - x0, h = y1 - y0;
+    const d = octx.getImageData(x0, y0, w, h).data;
+    const on = (px, py) => px >= 0 && py >= 0 && px < w && py < h && d[(py * w + px) * 4 + 3] > 140;
+    // 시작: 맨 아랫줄에서 가장 왼쪽 칠해진 픽셀
+    let sx = -1, sy = -1;
+    for (let py = h - 1; py >= 0 && sx < 0; py--) for (let px = 0; px < w; px++) if (on(px, py)) { sx = px; sy = py; break; }
+    if (sx < 0) return [];
+    const N8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    const pts = [];
+    let cx = sx, cy = sy, dir = 4; // 왼쪽에서 들어온 것으로 시작
+    for (let step = 0; step < w * h; step++) {
+      pts.push({ x: x0 + cx + 0.5, y: y0 + cy + 0.5 });
+      let found = false;
+      for (let k = 0; k < 8; k++) {
+        const nd = (dir + 5 + k) % 8;     // 들어온 방향 기준 왼쪽부터 시계 방향으로 훑음
+        const nx = cx + N8[nd][0], ny = cy + N8[nd][1];
+        if (on(nx, ny)) { cx = nx; cy = ny; dir = nd; found = true; break; }
+      }
+      if (!found) break;
+      if (cx === sx && cy === sy && pts.length > 2) break;
+    }
+    return pts;
+  }
+  // 윤곽에서 a에 가장 가까운 점부터 b에 가장 가까운 점까지, 두 방향 중 긴 쪽을 n개 점으로 균등하게
+  function outlinePath(pts, a, b, n) {
+    if (pts.length < 8) return null;
+    const near = q => { let bi = 0, bd = 1e18; pts.forEach((p, i) => { const dd = (p.x - q.x) ** 2 + (p.y - q.y) ** 2; if (dd < bd) { bd = dd; bi = i; } }); return bi; };
+    const ia = near(a), ib = near(b), L = pts.length;
+    const fwd = (ib - ia + L) % L, bwd = (ia - ib + L) % L;
+    const dirF = fwd >= bwd;
+    const cnt = dirF ? fwd : bwd;
+    const seq = [];
+    for (let k = 0; k <= cnt; k++) seq.push(pts[(ia + (dirF ? k : -k) + L * 4) % L]);
+    // 누적 길이로 균등 재배치
+    const cum = [0];
+    for (let k = 1; k < seq.length; k++) cum.push(cum[k - 1] + Math.hypot(seq[k].x - seq[k - 1].x, seq[k].y - seq[k - 1].y));
+    const tot = cum[cum.length - 1];
+    const out = [];
+    let j = 0;
+    for (let k = 0; k < n; k++) {
+      const target = (k / (n - 1)) * tot;
+      while (j < cum.length - 2 && cum[j + 1] < target) j++;
+      const u = cum[j + 1] > cum[j] ? (target - cum[j]) / (cum[j + 1] - cum[j]) : 0;
+      out.push({ x: lerp(seq[j].x, seq[j + 1].x, u), y: lerp(seq[j].y, seq[j + 1].y, u) });
+    }
+    return out;
+  }
+
+  /* ===== 글자 모양에서 점 뽑기 ===== */
+  function sample(txt, x, base, F, step) {
+    octx.clearRect(0, 0, oc.width, oc.height);
+    octx.font = `800 ${F}px ${FONT}`;
+    octx.fillStyle = '#fff';
+    octx.textBaseline = 'alphabetic';
+    octx.fillText(txt, x, base);
+    const m = octx.measureText(txt);
+    const x0 = Math.max(0, Math.floor(x - 2));
+    const y0 = Math.max(0, Math.floor(base - m.actualBoundingBoxAscent - 2));
+    const x1 = Math.min(oc.width, Math.ceil(x + m.width + 2));
+    const y1 = Math.min(oc.height, Math.ceil(base + m.actualBoundingBoxDescent + 2));
+    if (x1 <= x0 || y1 <= y0) return [];
+    const w = x1 - x0, h = y1 - y0;
+    const d = octx.getImageData(x0, y0, w, h).data;
+    const pts = [];
+    for (let y = 0; y < h; y += step) {
+      for (let xx = 0; xx < w; xx += step) {
+        if (d[(Math.floor(y) * w + Math.floor(xx)) * 4 + 3] > 140) {
+          pts.push({ x: x0 + xx + (Math.random() - 0.5) * step * 0.7, y: y0 + y + (Math.random() - 0.5) * step * 0.7 });
+        }
+      }
+    }
+    return pts;
+  }
+
+  const scatter = () => ({ x: Math.random() * W, y: Math.random() * H });
+  // 깊이(z)가 있는 우주 공간에 흩뿌리기. z>0 멀리, z<0 카메라 가까이
+  const scatter3 = (nearRatio = 0.25) => {
+    const z = Math.random() < nearRatio ? -0.5 + Math.random() * 0.5 : Math.random() * 2.4;
+    const u = -W * 0.05 + Math.random() * W * 1.1, v = -H * 0.05 + Math.random() * H * 1.1;
+    return { x: W / 2 + (u - W / 2) * (1 + z), y: H / 2 + (v - H / 2) * (1 + z), z };
+  };
+  // 원근 투영: 멀수록 작고 가운데로, 가까울수록 크고 바깥으로
+  function proj(x, y, z, out) {
+    const k = 1 / (1 + Math.max(-0.55, z));
+    out.x = W / 2 + (x - W / 2) * k;
+    out.y = H / 2 + (y - H / 2) * k;
+    out.k = k;
+  }
+
+  // 블랙홀 소용돌이 경로 준비
+  function spiralPrep(fx, fy, tx, ty, cx = L.cx, cy = L.cy) {
+    const sx = fx - cx, sy = fy - cy, ex = tx - cx, ey = ty - cy;
+    const as = Math.atan2(sy, sx), at = Math.atan2(ey, ex);
+    let d = at - as;
+    d = ((d % TAU) + TAU) % TAU;
+    d += TAU; // 정확히 한 바퀴 더 돌고 목표 지점에 도착
+    return { rs: Math.hypot(sx, sy), rt: Math.hypot(ex, ey), as, d, cx, cy };
+  }
+  function spiralAt(o, e, out) {
+    const k = eio(e);
+    const r = lerp(o.rs, o.rt, k) * (1 - 0.42 * Math.sin(Math.PI * k));
+    const a = o.as + o.d * k;
+    out.x = o.cx + Math.cos(a) * r;
+    out.y = o.cy + Math.sin(a) * r * (1 - 0.5 * Math.sin(Math.PI * k)); // 강착원반처럼 납작하게
+  }
+
+  /* ===== 연결선을 타고 가는 길 ===== */
+  const bez = (a, b, c, d, u) => {
+    const v = 1 - u;
+    return { x: v * v * v * a.x + 3 * v * v * u * b.x + 3 * v * u * u * c.x + u * u * u * d.x,
+             y: v * v * v * a.y + 3 * v * v * u * b.y + 3 * v * u * u * c.y + u * u * u * d.y };
+  };
+  // 구간 비율: i에서 선 입구까지 / 흐름선1 / 2의 테두리 한 바퀴(바닥만 빼고) / 흐름선2 / R 안으로 퍼짐
+  const SEG = [0.08, 0.2, 0.44, 0.16, 0.12];
+  function routeAt(p, u) {
+    const r = p.route;
+    let acc = 0, i = 0;
+    while (i < SEG.length - 1 && u > acc + SEG[i]) { acc += SEG[i]; i++; }
+    const v = clamp((u - acc) / SEG[i]);
+    let q;
+    if (i === 0) q = { x: lerp(p.ix, r[0].x, v), y: lerp(p.iy, r[0].y, v) };
+    else if (i === 1) q = bez(r[0], r[1], r[2], r[3], v);
+    else if (i === 2) {
+      const lp = L.twoLoop;
+      if (lp) {
+        const fi = v * (lp.length - 1), i0 = Math.floor(fi), i1 = Math.min(lp.length - 1, i0 + 1), fu = fi - i0;
+        // 테두리 밖으로 살짝 띄워서 선 위를 타는 느낌
+        q = { x: lerp(lp[i0].x, lp[i1].x, fu) + p.ox, y: lerp(lp[i0].y, lp[i1].y, fu) + p.oy };
+      } else q = { x: lerp(r[3].x, r[4].x, v), y: lerp(r[3].y, r[4].y, v) };
+    }
+    else if (i === 3) q = bez(r[4], r[5], r[6], r[7], v);
+    else { const w = eo(v); return { x: lerp(r[7].x, p.ax, w), y: lerp(r[7].y, p.ay, w) }; }
+    const j = i === 0 ? v : 1; // 선에 올라탄 뒤엔 띠 폭 유지
+    return { x: q.x + p.jx * j, y: q.y + p.jy * j };
+  }
+
+  // 보라 입자: i → 흐름선1 → 2의 왼쪽 아래 입구 → 2 안 제자리
+  const SEG2 = [0.12, 0.5, 0.38];
+  function routeAt2(p, u) {
+    const r = p.route;
+    let acc = 0, i = 0;
+    while (i < SEG2.length - 1 && u > acc + SEG2[i]) { acc += SEG2[i]; i++; }
+    const v = clamp((u - acc) / SEG2[i]);
+    if (i === 0) { const j = v; return { x: lerp(p.ix, r[0].x, v) + p.jx * j, y: lerp(p.iy, r[0].y, v) + p.jy * j }; }
+    if (i === 1) { const q = bez(r[0], r[1], r[2], r[3], v); return { x: q.x + p.jx, y: q.y + p.jy }; }
+    const w = eo(v);
+    return { x: lerp(r[3].x + p.jx, p.ax, w), y: lerp(r[3].y + p.jy, p.ay, w) };
+  }
+
+  /* ===== 입자 만들기 ===== */
+  function buildParticles() {
+    oc.width = Math.ceil(W); oc.height = Math.ceil(H);
+    L.icx = L.A.i.x + L.A.i.w / 2; L.icy = L.A.base - L.A.F * 0.36;
+    const { A, B } = L;
+    const stB = Math.max(1.35, B.F / 46);
+    const stA = Math.max(1.6, A.F / 62);
+    // 입자 크기를 글자 크기에 비례 — 작은 화면에서 네모 블록처럼 보이지 않게
+    const ps = clamp(B.F / 120, 0.5, 1);
+    L.ps = ps;
+
+    const iA = sample('i', A.i.x, A.base, A.F, stA * 0.9).sort((a, b) => a.x - b.x);
+    const iB = sample('imag', B.i.x, B.base, B.F, stB).sort((a, b) => a.x - b.x);
+    const rA = sample('R', A.r.x, A.base, A.F, stA * 1.1).sort((a, b) => a.x - b.x);
+    const rB = sample('REAL', B.r.x, B.base, B.F, stB).sort((a, b) => a.x - b.x);
+    const tA = sample('2', A.two.x, A.base, A.F, stA * 1.3);
+    {
+      const F = A.F, b = A.base;
+      const o = traceOutline('2', A.two.x, b, F);
+      L.twoLoop = outlinePath(o, { x: A.two.x + A.two.w * 0.06, y: b - F * 0.03 }, { x: A.two.x + A.two.w * 0.94, y: b - F * 0.03 }, 160);
+    }
+    if (iA.length) {
+      const minY = Math.min(...iA.map(q => q.y));
+      const top = iA.filter(q => q.y < minY + A.F * 0.1);
+      L.seedX = top.reduce((v, q) => v + q.x, 0) / top.length;
+      L.seedY = top.reduce((v, q) => v + q.y, 0) / top.length + A.F * 0.02;
+    } else { L.seedX = L.icx; L.seedY = A.base - A.F * 0.7; }
+
+    P = [];
+    const stage = () => {
+      const q = iA[Math.floor(Math.random() * iA.length)] || { x: L.icx, y: L.icy };
+      return { x: q.x + gauss() * A.F * 0.02, y: q.y + gauss() * A.F * 0.02 };
+    };
+    const tcx = A.two.x + A.two.w / 2, tcy = A.base - A.F * 0.36;
+    const add = (g, a, b, hue) => {
+      const s = scatter3(0.25), dd = scatter3(0.4);
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      const p = {
+        g, ax: a.x, ay: a.y, bx: b.x, by: b.y,
+        sx: s.x, sy: s.y, zs: s.z, dx: dd.x, dy: dd.y, zd: dd.z,
+        cpx: mx + gauss() * dist * 0.15,
+        cpy: my + sign * dist * (0.25 + Math.random() * 0.25),
+        del: Math.random() * 0.45,
+        del2: 0.3 * clamp(dist / (W * 0.35)) + Math.random() * 0.12,
+        sz: (g === 0 ? 1.1 + Math.random() * 1.5 : 1 + Math.random() * 1.2) * ps,
+        br: Math.random() < (g === 0 ? 0.18 : 0.05),
+        tws: 1.6 + Math.random() * 2.8,
+        ph: Math.random() * TAU,
+        col: `hsl(${hue.toFixed(0)},100%,${g === 0 ? 72 : 70}%)`,
+        colI: `hsl(${(192 + Math.random() * 28).toFixed(0)},100%,72%)`,
+        del3: Math.random() * 0.5,
+        x: s.x, y: s.y, a: 0
+      };
+      if (g === 0) { p.ix = a.x; p.iy = a.y; }
+      else {
+        const st = stage(); p.ix = st.x; p.iy = st.y;
+        if (g === 2) { // i에서 첫 번째 흐름선을 타고 2의 왼쪽 아래로
+          const F = A.F, b = A.base, f = Math.floor(Math.random() * 7) / 6;
+          const S1 = { x: A.i.x + A.i.w * 0.75, y: b - F * (0.52 - f * 0.4) };
+          const E1 = { x: A.two.x + A.two.w * 0.12, y: b - F * (0.06 + f * 0.05) };
+          p.route = [S1, { x: S1.x + F * 0.18, y: S1.y }, { x: E1.x - F * 0.2, y: E1.y - F * 0.02 }, E1];
+          p.jx = gauss() * F * 0.012; p.jy = gauss() * F * 0.012;
+        } else {       // i에서 연결선을 타고 2의 바닥을 지나 R로
+          const F = A.F, b = A.base, f = Math.floor(Math.random() * 7) / 6;
+          const S1 = { x: A.i.x + A.i.w * 0.75, y: b - F * (0.52 - f * 0.4) };
+          const E1 = { x: A.two.x + A.two.w * 0.12, y: b - F * (0.06 + f * 0.05) };
+          const S2 = { x: A.two.x + A.two.w * 0.88, y: b - F * (0.03 + f * 0.05) };
+          const E2 = { x: A.r.x + F * 0.07, y: b - F * (0.08 + f * 0.35) };
+          p.route = [
+            S1, { x: S1.x + F * 0.18, y: S1.y }, { x: E1.x - F * 0.2, y: E1.y - F * 0.02 }, E1,
+            S2, { x: S2.x + F * 0.1, y: S2.y }, { x: E2.x - F * 0.12, y: E2.y + F * 0.04 }, E2
+          ];
+          p.jx = gauss() * F * 0.012; p.jy = gauss() * F * 0.012; // 한 줄이 아니라 띠처럼
+          p.ox = gauss() * F * 0.014; p.oy = gauss() * F * 0.014; // 테두리를 탈 때 띠 폭
+        }
+      }
+      P.push(p);
+    };
+
+    // 시안: i → imag (왼쪽 시안, 2에 가까울수록 보라빛)
+    iB.forEach((b, j) => {
+      const src = iA[Math.floor((j / iB.length) * iA.length)] || { x: A.i.x, y: A.base };
+      const spread = Math.random() < 0.15 ? A.F * 0.07 : A.F * 0.018;
+      const a = { x: src.x + gauss() * spread, y: src.y + gauss() * spread };
+      const hue = lerp(188, 238, clamp((b.x - B.i.x) / B.i.w)) + (Math.random() - 0.5) * 12;
+      add(0, a, b, hue);
+    });
+    // 핑크: R → REAL
+    rB.forEach((b, j) => {
+      const a = rA[Math.floor((j / rB.length) * rA.length)] || { x: A.r.x, y: A.base };
+      add(1, a, b, 318 + Math.random() * 16);
+    });
+    // 보라: 2를 그리는 입자
+    const s = B.F / A.F;
+    tA.forEach(a => {
+      add(2, a, { x: B.two.x + (a.x - A.two.x) * s, y: B.base + (a.y - A.base) * s }, 258 + Math.random() * 16);
+    });
+  }
+
+  function buildStars() {
+    const n = Math.min(420, Math.floor((W * H * 1.9) / 5200));
+    stars = Array.from({ length: n }, () => ({
+      x: -W * 0.2 + Math.random() * W * 1.4, y: -H * 0.2 + Math.random() * H * 1.4,
+      d: 0.12 + Math.random() * 0.8,
+      r: Math.random() < 0.9 ? 0.4 + Math.random() * 0.7 : 1.1 + Math.random() * 0.6,
+      ph: Math.random() * TAU, sp: 0.6 + Math.random() * 1.6,
+      base: 0.15 + Math.random() * 0.35
+    }));
+  }
+
+  function buildSparks() {
+    const pool = P.filter(p => p.g !== 2);
+    sparks = Array.from({ length: 46 }, () => {
+      const p = pool[Math.floor(Math.random() * pool.length)];
+      return {
+        sx: p.bx, sy: p.by,
+        tx: lerp(L.kx0, L.kx1, Math.random()), ty: L.ky - L.KF * 0.4 + gauss() * L.KF * 0.2,
+        del: Math.random() * 0.7, col: p.col
+      };
+    });
+  }
+
+  function newCycle() {
+    for (const p of P) {
+      p.sx = p.dx; p.sy = p.dy; p.zs = p.zd;
+      const d = scatter3(0.4); p.dx = d.x; p.dy = d.y; p.zd = d.z;
+    }
+  }
+
+  /* ===== 색: 흰색으로 진행 → R 점화 순간 파동을 따라 색이 켜짐 ===== */
+  const WHITE = [234, 240, 255];
+  const mix = (rgb, c, al = 1) => `rgba(${Math.round(lerp(WHITE[0], rgb[0], c))},${Math.round(lerp(WHITE[1], rgb[1], c))},${Math.round(lerp(WHITE[2], rgb[2], c))},${al})`;
+  // 이 위치에 색이 얼마나 켜졌는지 (0 흰색 ~ 1 색)
+  function colorAt(x, y, t) {
+    if (t < T.rOn) return 0;
+    if (t < T.holdE) {
+      const A = L.A;
+      const rx = A.r.x + A.r.w / 2, ry = A.base - A.F * 0.36;
+      // R에서 시작해 0.9초 동안 2를 지나 i까지 번짐 — 번지는 게 눈에 보이는 속도
+      const reach = Math.hypot(rx - A.i.x, ry - A.base) + A.F * 0.6;
+      const e = (t - T.rOn) / 0.9;
+      if (e >= 1.4) return 1;
+      const r = reach * eio(clamp(e)) + (e > 1 ? Math.max(W, H) * (e - 1) * 3 : 0);
+      return clamp((r - Math.hypot(x - rx, y - ry)) / (A.F * 0.45));
+    }
+    return 1 - eio(clamp((t - T.holdE) / 1.1)); // 흩어지며 다시 흰 먼지로
+  }
+
+  /* ===== 카메라 ===== */
+  // [시간, 확대, 바라보는 곳] — 정지 구간(13.2~24.2초)은 확대 1, 화면 가운데라 로고 모양이 매번 같음
+  function camKeys() {
+    const A = L.A, C = { x: W / 2, y: H / 2 };
+    const Pi = { x: L.icx, y: L.icy };
+    const P2 = { x: A.two.x + A.two.w / 2, y: A.base - A.F * 0.36 };
+    const PR = { x: A.r.x + A.r.w / 2, y: A.base - A.F * 0.36 };
+    return [
+      [0, 1.1, C], [T.gatherS + T.gatherD + 0.5, 1.28, Pi], [T.twoS + T.twoD, 1.2, P2],
+      [T.fillS + 1.2, 1.16, PR], [T.expS - 0.2, 1.1, C], [T.expS + T.expD + 0.2, 0.97, C],
+      [T.korS + 0.2, 1, C], [T.holdE, 1, C], [T.cycle, 1.1, C]
+    ];
+  }
+  function punch(x) {
+    if (x < 0 || x > 0.7) return 0;
+    return x < 0.06 ? x / 0.06 : Math.pow(1 - (x - 0.06) / 0.64, 2);
+  }
+  function camera(t) {
+    const K = L.keys, C = { x: W / 2, y: H / 2 };
+    let i = 0;
+    while (i < K.length - 2 && t > K[i + 1][0]) i++;
+    const [t0, z0, p0] = K[i], [t1, z1, p1] = K[i + 1];
+    const e = eio(clamp((t - t0) / (t1 - t0)));
+    const follow = L.narrow ? 0.45 : 0.7, amp = L.narrow ? 0.5 : 1;
+    const tx = lerp(p0.x, p1.x, e), ty = lerp(p0.y, p1.y, e);
+    let z = lerp(z0, z1, e);
+    z += punch(t - T.rOn) * 0.045 + punch(t - T.realOn) * 0.02;
+    return { z: 1 + (z - 1) * amp, fx: C.x + (tx - C.x) * follow, fy: C.y + (ty - C.y) * follow };
+  }
+
+  /* ===== 박자: 파동과 번쩍임 ===== */
+  function drawShock(x, y, dt, dur, maxR, rgb, strength) {
+    if (dt < 0 || dt > dur) return;
+    const e = dt / dur;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = strength * (1 - e) * (1 - e);
+    ctx.strokeStyle = `rgb(${rgb})`;
+    ctx.lineWidth = 1 + maxR * 0.01 * (1 - e);
+    ctx.shadowColor = `rgb(${rgb})`;
+    ctx.shadowBlur = 14 * DPR;
+    ctx.beginPath(); ctx.arc(x, y, maxR * eo(e), 0, TAU); ctx.stroke();
+    ctx.restore();
+  }
+  function drawBeats(t) {
+    const A = L.A, B = L.B;
+    drawShock(L.icx, L.icy, t - (T.gatherS + T.gatherD + 0.1), 0.9, A.F * 0.7, '225,232,255', 0.5);
+    drawShock(A.two.x + A.two.w / 2, A.base - A.F * 0.36, t - (T.twoS + T.twoD), 0.9, A.F * 0.8, '225,232,255', 0.45);
+    const rx = A.r.x + A.r.w / 2, ry = A.base - A.F * 0.36, big = Math.max(W, H) * 0.7;
+    drawShock(rx, ry, t - T.rOn, 1.4, big, '255,90,180', 0.9);
+    drawShock(rx, ry, t - T.rOn - 0.14, 1.2, big * 0.6, '255,170,220', 0.6);
+    drawShock(B.r.x + B.r.w / 2, B.base - B.F * 0.36, t - T.realOn, 1.1, B.F * 2.6, '255,90,180', 0.45);
+  }
+
+  /* ===== 그리기 요소 ===== */
+  function flick(x) {
+    if (x < 0) return 0;
+    const seq = [[0.06, 0.75], [0.11, 0.08], [0.19, 0.9], [0.25, 0.2], [0.33, 1]];
+    for (const [e, v] of seq) if (x < e) return v;
+    return 1;
+  }
+
+  // i 윗점 자리에 먼저 켜지는 별 — 먼지를 끌어당기는 중심
+  function drawSeed(t, time) {
+    const on = eo(clamp((t - T.seedS) / 0.5));
+    const off = 1 - clamp((t - (T.gatherS + T.gatherD)) / 0.6);
+    const a = on * off;
+    if (a <= 0.01) return;
+    const F = L.A.F, x = L.seedX, y = L.seedY;
+    const pulse = 0.85 + 0.15 * Math.sin(time * 5);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, F * 0.45);
+    gr.addColorStop(0, `rgba(210,245,255,${0.55 * a})`);
+    gr.addColorStop(0.2, `rgba(200,215,255,${0.16 * a})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(x, y, F * 0.45, 0, TAU); ctx.fill();
+    const sz = F * 0.09 * on * pulse;
+    ctx.globalAlpha = a;
+    ctx.translate(x, y);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = '#DCE4FF';
+    ctx.shadowBlur = F * 0.1 * DPR;
+    ctx.beginPath();
+    ctx.moveTo(0, -sz);
+    ctx.quadraticCurveTo(0, 0, sz, 0);
+    ctx.quadraticCurveTo(0, 0, 0, sz);
+    ctx.quadraticCurveTo(0, 0, -sz, 0);
+    ctx.quadraticCurveTo(0, 0, 0, -sz);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // (이전 버전의 블랙홀 궤도 고리 — 현재 사용하지 않음)
+  function drawBlackHole(t, time) {
+    const e = clamp((t - T.gatherS) / 1.9);
+    if (e <= 0 || e >= 1) return;
+    const env = Math.sin(Math.PI * e);
+    const R = Math.min(W, H) * 0.44 * (1 - 0.82 * eio(e));
+    const X = L.icx, Y = L.icy;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 5; k++) {
+      const rr = R * (1 - k * 0.17);
+      if (rr <= 1) continue;
+      ctx.beginPath();
+      ctx.ellipse(X, Y, rr, rr * 0.34, -0.18, 0, TAU);
+      ctx.setLineDash([rr * 0.6, rr * 0.25]);
+      ctx.lineDashOffset = -time * 60 * (1 + k * 0.4);
+      ctx.strokeStyle = `hsla(${250 + k * 14},95%,72%,${env * 0.28 * (1 - k * 0.14)})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    const gr = ctx.createRadialGradient(X, Y, 0, X, Y, R * 0.35 + 10);
+    gr.addColorStop(0, `rgba(235,225,255,${env * 0.35})`);
+    gr.addColorStop(0.4, `rgba(140,90,255,${env * 0.12})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(X, Y, R * 0.35 + 10, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  // 현재 레이아웃(압축 ↔ 펼침 보간)
+  function curLayout(k) {
+    const { A, B } = L;
+    const mix = (a, b) => ({ x: lerp(a.x, b.x, k), w: lerp(a.w, b.w, k) });
+    return { F: lerp(A.F, B.F, k), base: lerp(A.base, B.base, k), i: mix(A.i, B.i), two: mix(A.two, B.two), r: mix(A.r, B.r), sf: lerp(0.75, 0.965, k) };
+  }
+
+  // 2: 겹겹의 선으로 이루어진 리본
+  const tc = document.createElement('canvas');
+  const tctx = tc.getContext('2d');
+  function drawTwo(lay, prog, a, c = 1, glow = 0) {
+    if (a <= 0.01 || prog <= 0) return;
+    const F = lay.F, x = lay.two.x, base = lay.base;
+    const px = x + lay.two.w / 2, py = base - F * 0.36;
+    // 다 그려진 뒤엔 화면에 바로, 번지는 중엔 오프스크린에 그린 뒤 입구 중심 원형 마스크로 가림
+    const partial = prog < 1;
+    const g = partial ? tctx : ctx;
+    const pad = F * 0.3;
+    const rx = Math.max(0, x - pad), ry = Math.max(0, base - F * 0.8 - pad);
+    const rw = Math.min(W - rx, lay.two.w + pad * 2), rh = Math.min(H - ry, F * 0.85 + pad * 2);
+    if (partial) { tctx.clearRect(rx, ry, rw, rh); }
+    g.save();
+    if (partial) {
+      g.beginPath(); g.rect(rx, ry, rw, rh); g.clip();
+    }
+    g.font = `800 ${F}px ${FONT}`;
+    g.lineJoin = 'round';
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = (partial ? 1 : a) * 0.14;
+    g.fillStyle = mix([110, 61, 255], c);
+    g.fillText('2', x, base);
+    for (let k = 0; k < 7; k++) {
+      const s = 1 - k * 0.048;
+      g.save();
+      g.translate(px, py); g.scale(s, s); g.translate(-px, -py);
+      g.globalAlpha = (partial ? 1 : a) * (1 - k * 0.11);
+      g.lineWidth = Math.max(1, F * (k === 0 ? 0.011 : 0.0042)) / s;
+      g.strokeStyle = `hsl(${262 - k * 5},${(95 * c).toFixed(0)}%,${lerp(90 - k * 2, 74 - k * 3, c).toFixed(0)}%)`;
+      if (k === 0) { g.shadowColor = mix([142, 91, 255], c); g.shadowBlur = F * 0.09 * (1 + 1.6 * glow) * DPR; }
+      g.strokeText('2', x, base);
+      g.restore();
+    }
+    g.restore();
+    if (partial) {
+      // 입구(왼쪽 아래)에서 번져 나가는 원
+      const ex = x + lay.two.w * 0.12, ey = base - F * 0.08;
+      const Rmax = Math.hypot(lay.two.w, F * 0.78) * 1.05;
+      const r = Rmax * prog;
+      const soft = Rmax * 0.3;
+      tctx.save();
+      tctx.globalCompositeOperation = 'destination-in';
+      const m = tctx.createRadialGradient(ex, ey, Math.max(0, r - soft), ex, ey, r + soft * 0.2);
+      m.addColorStop(0, 'rgba(0,0,0,1)');
+      m.addColorStop(1, 'rgba(0,0,0,0)');
+      tctx.fillStyle = m;
+      tctx.fillRect(rx, ry, rw, rh);
+      tctx.restore();
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a;
+      ctx.drawImage(tc, rx * DPR, ry * DPR, rw * DPR, rh * DPR, rx, ry, rw, rh);
+      ctx.restore();
+    }
+  }
+
+  // i → 2 → R 을 잇는 흐름선(연결)
+  function drawStreams(lay, p1, p2, a, c = 1) {
+    if (a <= 0.01 || p1 <= 0) return;
+    const F = lay.F, b = lay.base;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = Math.max(0.8, F * 0.0035);
+    const L1 = F * 1.2;
+    const g1 = ctx.createLinearGradient(lay.i.x + lay.i.w * 0.6, 0, lay.two.x + lay.two.w * 0.3, 0);
+    g1.addColorStop(0, mix([80, 220, 255], c, 0));
+    g1.addColorStop(0.5, mix([90, 200, 255], c, 0.45 * a));
+    g1.addColorStop(1, mix([150, 100, 255], c, 0.55 * a));
+    const g2 = ctx.createLinearGradient(lay.two.x + lay.two.w * 0.7, 0, lay.r.x + F * 0.1, 0);
+    g2.addColorStop(0, mix([150, 100, 255], c, 0.5 * a));
+    g2.addColorStop(1, mix([255, 80, 170], c, 0.5 * a));
+    for (let k = 0; k < 7; k++) {
+      const f = k / 6;
+      ctx.setLineDash(p1 < 1 ? [L1 * p1, L1] : []);
+      ctx.strokeStyle = g1;
+      ctx.beginPath();
+      const sx = lay.i.x + lay.i.w * (lay.sf ?? 0.75), sy = b - F * (0.52 - f * 0.4);
+      const ex = lay.two.x + lay.two.w * 0.12, ey = b - F * (0.06 + f * 0.05);
+      ctx.moveTo(sx, sy);
+      ctx.bezierCurveTo(sx + F * 0.18, sy, ex - F * 0.2, ey - F * 0.02, ex, ey);
+      ctx.stroke();
+      if (p2 <= 0) continue;
+      ctx.setLineDash(p2 < 1 ? [L1 * p2, L1] : []);
+      ctx.strokeStyle = g2;
+      ctx.beginPath();
+      const s2x = lay.two.x + lay.two.w * 0.88, s2y = b - F * (0.03 + f * 0.05);
+      const e2x = lay.r.x + F * 0.07, e2y = b - F * (0.08 + f * 0.35);
+      ctx.moveTo(s2x, s2y);
+      ctx.bezierCurveTo(s2x + F * 0.1, s2y, e2x - F * 0.12, e2y + F * 0.04, e2x, e2y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 글자 겉테두리만 그리기 — 서체 안쪽에 겹친 획이 드러나지 않게
+  function ringText(txt, x, base, F, lw, color, prog, alpha, blur, blurCol) {
+    if (alpha <= 0.01 || prog <= 0) return;
+    wctx.font = `800 ${F}px ${FONT}`;
+    const m = wctx.measureText(txt);
+    const pad = lw * 2 + 6;
+    const rx = Math.max(0, x - pad), ry = Math.max(0, base - m.actualBoundingBoxAscent - pad);
+    const rw = Math.min(W - rx, m.width + pad * 2), rh = Math.min(H - ry, m.actualBoundingBoxAscent + m.actualBoundingBoxDescent + pad * 2);
+    if (rw <= 0 || rh <= 0) return;
+    wctx.clearRect(rx, ry, rw, rh);
+    wctx.globalCompositeOperation = 'source-over';
+    wctx.lineJoin = 'round';
+    wctx.lineWidth = lw * 2;
+    wctx.strokeStyle = color;
+    const Ld = F * 5.2;
+    wctx.setLineDash(prog < 1 ? [Ld * prog, Ld] : []);
+    wctx.strokeText(txt, x, base);
+    wctx.setLineDash([]);
+    wctx.globalCompositeOperation = 'destination-out';
+    wctx.fillStyle = '#000';
+    wctx.fillText(txt, x, base);
+    wctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (blur) { ctx.shadowColor = blurCol; ctx.shadowBlur = blur * DPR; }
+    ctx.drawImage(wc, rx * DPR, ry * DPR, rw * DPR, rh * DPR, rx, ry, rw, rh);
+    ctx.restore();
+  }
+
+  // R / REAL: 네온 튜브
+  function drawNeon(txt, x, base, F, a, fillA = 0.12) {
+    if (a <= 0.01) return;
+    if (fillA > 0) {
+      ctx.save();
+      ctx.font = `800 ${F}px ${FONT}`;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = `rgba(255,60,160,${fillA})`;
+      ctx.fillText(txt, x, base);
+      ctx.restore();
+    }
+    ringText(txt, x, base, F, Math.max(2, F * 0.022), '#FF4FA8', 1, a, F * 0.15, '#FF2F95');
+    ringText(txt, x, base, F, Math.max(1, F * 0.007), '#FFD6EC', 1, a, F * 0.04, '#FF6FB8');
+  }
+
+  // R / REAL: 발광 판 — 속에서 빛이 나오는 아크릴 간판. c = 색 켜진 정도(0 흰 판 ~ 1 핑크 판)
+  function drawPanel(txt, x, base, F, a, c, time) {
+    if (a <= 0.01) return;
+    ctx.save();
+    ctx.font = `800 ${F}px ${FONT}`;
+    const m = ctx.measureText(txt);
+    const cx = x + m.width / 2, cy = base - F * 0.36;
+    const breathe = 0.5 + 0.5 * Math.sin(time * 1.6);
+    const rad = Math.max(m.width, F) * 0.72;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, mix([255, 158, 214], c, lerp(0.34, 0.78, c) + 0.04 * breathe * c));
+    g.addColorStop(0.55, mix([245, 92, 178], c, lerp(0.30, 0.68, c)));
+    g.addColorStop(1, mix([222, 40, 148], c, lerp(0.26, 0.60, c)));
+    ctx.globalAlpha = a;
+    ctx.shadowColor = mix([255, 80, 172], c, lerp(0.35, 0.9, c));
+    ctx.shadowBlur = F * lerp(0.05, 0.13, c) * DPR;
+    ctx.fillStyle = g;
+    ctx.fillText(txt, x, base);
+    ctx.shadowBlur = 0;
+    ctx.fillText(txt, x, base);
+    ctx.restore();
+  }
+
+  // 상상과 현실을 잇는 별
+  function drawLinkStar(x, y, KF, a, time) {
+    if (a <= 0.01) return;
+    const pulse = reduce ? 1 : 0.8 + 0.2 * Math.sin(time * 2.4);
+    const s = KF * 0.34 * (0.6 + 0.4 * eo(a)) * pulse;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a * (0.75 + 0.25 * pulse);
+    ctx.translate(x, y);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = '#A98BFF';
+    ctx.shadowBlur = KF * 0.7 * DPR;
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.quadraticCurveTo(0, 0, s, 0);
+    ctx.quadraticCurveTo(0, 0, 0, s);
+    ctx.quadraticCurveTo(0, 0, -s, 0);
+    ctx.quadraticCurveTo(0, 0, 0, -s);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // imag 입자 중 하나가 십자 모양으로 반짝이는 별빛
+  const glints = [];
+  function drawGlints(t, time) {
+    const active = !reduce && t > T.gatherS + 2 && t < T.holdE;
+    if (active && Math.random() < 0.09) {
+      const pool = P.filter(p => p.g === 0);
+      if (pool.length) glints.push({ p: pool[Math.floor(Math.random() * pool.length)], t0: time, d: 0.5 + Math.random() * 0.4 });
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = glints.length - 1; i >= 0; i--) {
+      const g = glints[i];
+      const e = (time - g.t0) / g.d;
+      if (e >= 1 || !active) { glints.splice(i, 1); continue; }
+      const a = Math.sin(Math.PI * e);
+      const len = Math.max(6, L.B.F * 0.07) * (0.6 + 0.4 * a);
+      const { x, y } = g.p;
+      ctx.globalAlpha = a;
+      ctx.lineWidth = 1;
+      const gh = ctx.createLinearGradient(x - len, y, x + len, y);
+      gh.addColorStop(0, 'rgba(160,240,255,0)'); gh.addColorStop(0.5, 'rgba(235,252,255,1)'); gh.addColorStop(1, 'rgba(160,240,255,0)');
+      ctx.strokeStyle = gh;
+      ctx.beginPath(); ctx.moveTo(x - len, y); ctx.lineTo(x + len, y); ctx.stroke();
+      const gv = ctx.createLinearGradient(x, y - len, x, y + len);
+      gv.addColorStop(0, 'rgba(160,240,255,0)'); gv.addColorStop(0.5, 'rgba(235,252,255,1)'); gv.addColorStop(1, 'rgba(160,240,255,0)');
+      ctx.strokeStyle = gv;
+      ctx.beginPath(); ctx.moveTo(x, y - len); ctx.lineTo(x, y + len); ctx.stroke();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(x, y, (0.9 + a * 0.9) * L.ps, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 한글: 빛 입자가 이끌며 한 자씩
+  function drawKorean(t, gf, time) {
+    const e = clamp((t - T.korS) / T.korD);
+    if (e <= 0) return;
+    const KF = L.KF;
+    const dotX = lerp(L.kx0 - KF * 0.8, L.kx1 + KF * 0.6, eo(e));
+    ctx.save();
+    ctx.font = `500 ${KF}px ${KFONT}`;
+    ctx.textBaseline = 'alphabetic';
+    for (const o of L.chars) {
+      const ca = clamp((dotX - o.x) / (KF * 1.1));
+      if (ca <= 0) continue;
+      if (o.c === ' ') { drawLinkStar(o.x + o.w / 2, L.ky - KF * 0.36, KF, ca * gf, time); continue; }
+      ctx.save();
+      ctx.globalAlpha = ca * gf;
+      ctx.fillStyle = o.col;
+      ctx.shadowColor = o.col;
+      ctx.shadowBlur = KF * 0.35 * DPR;
+      ctx.fillText(o.c, o.x, L.ky + (1 - eo(ca)) * KF * 0.25);
+      ctx.restore();
+    }
+    if (e < 1) {
+      const dy = L.ky - KF * 0.36;
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createRadialGradient(dotX, dy, 0, dotX, dy, KF * 1.1);
+      gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+      gr.addColorStop(0.15, 'rgba(210,200,255,0.5)');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = Math.sin(Math.PI * e) * 0.9 + 0.1;
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(dotX, dy, KF * 1.1, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 워드마크에서 한글 자리로 내려앉는 입자
+  function drawSparks(t) {
+    const t0 = T.korS - 0.45;
+    if (t < t0 || t > T.korS + T.korD + 0.4) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of sparks) {
+      const e = clamp((t - t0 - s.del) / 0.9);
+      if (e <= 0 || e >= 1) continue;
+      const k = eo(e);
+      const x = lerp(s.sx, s.tx, k), y = lerp(s.sy, s.ty, k * k);
+      ctx.globalAlpha = Math.sin(Math.PI * e) * 0.9;
+      ctx.fillStyle = s.col;
+      ctx.beginPath(); ctx.arc(x, y, 1.3, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /* ===== 한 프레임 ===== */
+  function render(t, time) {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    const cam = reduce ? { z: 1, fx: W / 2, fy: H / 2 } : camera(t);
+    const Cx = W / 2, Cy = H / 2;
+
+    // 배경 별: 깊이별로 카메라를 덜 따라감(시차) + 미세한 반짝임
+    ctx.fillStyle = '#fff';
+    for (const s of stars) {
+      const zs = 1 + (cam.z - 1) * s.d;
+      const x = Cx + (s.x - Cx - (cam.fx - Cx) * s.d) * zs;
+      const y = Cy + (s.y - Cy - (cam.fy - Cy) * s.d) * zs;
+      if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue;
+      const tw = reduce ? 0.5 : 0.5 + 0.5 * Math.sin(time * s.sp + s.ph);
+      ctx.globalAlpha = s.base * (0.45 + 0.55 * tw) * (0.5 + 0.6 * s.d);
+      ctx.beginPath(); ctx.arc(x, y, s.r * (0.6 + 0.6 * s.d), 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // 카메라 적용 — 여기부터 그리는 건 모두 카메라를 따라감
+    ctx.save();
+    ctx.translate(Cx, Cy);
+    ctx.scale(cam.z, cam.z);
+    ctx.translate(-cam.fx, -cam.fy);
+
+    drawSeed(t, time);
+    drawBeats(t);
+
+    const gf = 1 - eio(clamp((t - T.holdE) / 0.55));           // 흩어질 때 전체 페이드
+    const ek = eio(clamp((t - T.expS) / (T.expD + 0.3)));        // 압축 → 펼침 비율
+    const lay = curLayout(ek);
+
+    const twoProg = eio(clamp((t - T.twoS) / T.twoD));
+    const s1 = eio(clamp((t - T.s1S) / T.s1D));
+    const s2 = eio(clamp((t - T.s2S) / T.s2D));
+    const c2 = colorAt(lay.two.x + lay.two.w / 2, lay.base - lay.F * 0.36, t);
+    const cS = colorAt(lay.two.x, lay.base - lay.F * 0.3, t);
+    const flow = clamp((t - (T.fillS + 0.15)) / 0.35) * (1 - clamp((t - (T.fillS + 2.0)) / 0.5));
+    const flow2 = clamp((t - T.rideS) / 0.3) * (1 - clamp((t - (T.rideS + T.rideD + 0.2)) / 0.5));
+    drawStreams(lay, s1, s2, gf * (1 + 0.9 * Math.max(flow, flow2)), cS);
+    drawTwo(lay, twoProg, gf, c2, flow);
+
+    // R: 가는 윤곽선(선) → 속 채움(면)
+    const expOut = 1 - clamp((t - T.expS) / 0.22);
+    const rLine = eio(clamp((t - T.rLineS) / T.rLineD));
+    ringText('R', L.A.r.x, L.A.base, L.A.F, Math.max(1, L.A.F * 0.004), '#F2F4FF', rLine, expOut * (1 - 0.7 * flick(t - T.rOn)), L.A.F * 0.03, '#D8DEFF');
+    const rFill = clamp((t - (T.fillS + 1.28)) / 0.75) * expOut;
+    if (rFill > 0) {
+      // 입자가 녹아 붙어 흰 판으로 굳음 → 점화 때 판 전체에 색이 켜짐(깜빡임 포함)
+      const cR = colorAt(L.A.r.x + L.A.r.w / 2, L.A.base - L.A.F * 0.36, t);
+      drawPanel('R', L.A.r.x, L.A.base, L.A.F, rFill, cR * (0.3 + 0.7 * flick(t - T.rOn)), time);
+    }
+
+    // 네온 상태
+    const rNeon = flick(t - T.rOn) * expOut;
+    const realNeon = flick(t - T.realOn) * gf;
+    const purpleFade = t < T.holdE ? 1 - clamp((t - (T.twoS + T.twoD)) / 0.6) : clamp((t - T.holdE) / 0.4);
+
+    // 입자
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const tmp = { x: 0, y: 0, k: 1 };
+    const DRIFT = 0.06; // 시작 전 먼지가 천천히 다가오는 속도
+    for (const p of P) {
+      let a, col = p.col, k3 = 1;
+      if (t < T.gatherS) {
+        proj(p.sx, p.sy, p.zs - t * DRIFT, tmp); p.x = tmp.x; p.y = tmp.y; k3 = tmp.k; a = 0.3;
+      } else if (t < T.expS) {
+        const e = clamp((t - T.gatherS - p.del) / T.gatherD);
+        const go = p.g === 0 ? 0
+          : p.g === 2 ? clamp((t - T.rideS - p.del3 * 0.9) / T.rideD)
+          : clamp((t - T.fillS - p.del3 * 0.9) / 1.5);
+        if (e < 1 || p.g === 0 || go <= 0) {
+          const k = Math.pow(e, 2.3); // 멀리선 느리게, 가까울수록 빠르게 — 끌려오는 느낌
+          const z0 = p.zs - T.gatherS * DRIFT;
+          proj(lerp(p.sx, p.ix, k), lerp(p.sy, p.iy, k), lerp(z0, 0, k), tmp);
+          p.x = tmp.x; p.y = tmp.y; k3 = tmp.k; // z=0(글자 면)에 도착하면 원래 자리 그대로
+          a = lerp(0.3, p.g === 0 ? 1 : 0.7, e);
+          col = p.g === 0 || k < 0.9 ? p.col : p.colI;
+        } else {
+          const q = p.g === 1 ? routeAt(p, eio(go)) : routeAt2(p, eio(go));
+          p.x = q.x; p.y = q.y;
+          a = 1;
+        }
+      } else if (t < T.holdE) {
+        const e = eio(clamp((t - T.expS - p.del2) / T.expD));
+        const u = 1 - e;
+        p.x = u * u * p.ax + 2 * u * e * p.cpx + e * e * p.bx;
+        p.y = u * u * p.ay + 2 * u * e * p.cpy + e * e * p.by;
+        a = 1;
+      } else {
+        const e = eio(clamp((t - T.holdE - p.del * 0.5) / (T.disD - 0.25)));
+        proj(lerp(p.bx, p.dx, e), lerp(p.by, p.dy, e), lerp(0, p.zd, e), tmp);
+        p.x = tmp.x; p.y = tmp.y; k3 = tmp.k;
+        a = lerp(1, 0.3, e);
+      }
+      if (p.g === 0) {
+        if (!reduce && t > T.gatherS + 2.4 && t < T.holdE) a *= 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(time * p.tws + p.ph));
+      } else if (p.g === 1) {
+        const n = Math.max(rNeon, realNeon);
+        a *= 1 - 0.85 * n;
+      } else {
+        a *= t < T.gatherS ? 1 : purpleFade;
+      }
+      // 깊이: 가까우면 크고 흐릿하게, 멀면 작고 옅게
+      if (k3 !== 1) a *= k3 > 1.3 ? 0.55 : clamp(0.35 + 0.65 * k3, 0.35, 1);
+      if (a < 0.02) continue;
+      const sz = p.sz * Math.min(k3, 2.2);
+      const c = colorAt(p.x, p.y, t);
+      const dot = (fill, al) => {
+        if (al < 0.01) return;
+        ctx.globalAlpha = al;
+        ctx.fillStyle = fill;
+        if (sz > 2.4) { ctx.beginPath(); ctx.arc(p.x, p.y, sz / 2, 0, TAU); ctx.fill(); }
+        else ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
+        if (p.br && k3 < 1.3) {
+          ctx.globalAlpha = al * 0.14;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * (1.6 + 0.8 * L.ps), 0, TAU); ctx.fill();
+        }
+      };
+      if (c < 0.99) dot('#EAF0FF', a * (1 - c));
+      if (c > 0.01) dot(col, a * c);
+    }
+    ctx.restore();
+
+    // imag 가독성 보조(아주 옅은 면)
+    const imagA = clamp((t - (T.expS + 1.2)) / 0.8) * gf * lerp(0.16, 0.07, (L.ps - 0.5) / 0.5);
+    if (imagA > 0) {
+      ctx.save();
+      ctx.globalAlpha = imagA;
+      ctx.font = `800 ${L.B.F}px ${FONT}`;
+      ctx.fillStyle = '#5FD8FF';
+      ctx.fillText('imag', L.B.i.x, L.B.base);
+      ctx.restore();
+    }
+
+    drawNeon('R', L.A.r.x, L.A.base, L.A.F, rNeon, 0);
+    drawPanel('REAL', L.B.r.x, L.B.base, L.B.F, realNeon, 1, time);
+    drawNeon('REAL', L.B.r.x, L.B.base, L.B.F, realNeon, 0);
+
+    drawGlints(t, time);
+    drawSparks(t);
+    drawKorean(t, gf, time);
+    ctx.restore(); // 카메라 끝
+
+    // 점화 순간 화면 전체가 짧게 번쩍임
+    const fx = t - T.rOn;
+    if (!reduce && fx >= 0 && fx < 0.4) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.1 * Math.pow(1 - fx / 0.4, 2);
+      ctx.fillStyle = '#FFC8E6';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+  }
+
+  /* ===== 실행 ===== */
+  function setup() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = cv.clientWidth; H = cv.clientHeight;
+    lastW = W; lastH = H;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    wc.width = cv.width; wc.height = cv.height;
+    wctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    tc.width = cv.width; tc.height = cv.height;
+    tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildLayout();
+    buildParticles();
+    L.keys = camKeys();
+    buildStars();
+    buildSparks();
+    cyc0 = performance.now();
+    if (reduce) {
+      for (const p of P) { p.x = p.bx; p.y = p.by; }
+      render(18, 0);
+    }
+  }
+
+  function frame(now) {
+    let t = (now - cyc0) / 1000;
+    while (t >= T.cycle) { cyc0 += T.cycle * 1000; t -= T.cycle; newCycle(); }
+    render(t, now / 1000);
+    requestAnimationFrame(frame);
+  }
+
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const w = cv.clientWidth, h = cv.clientHeight;
+      // 모바일 주소창 높이 변화 정도는 무시
+      if (Math.abs(w - lastW) > 2 || Math.abs(h - lastH) / lastH > 0.15) setup();
+    }, 220);
+  });
+
+  const ready = document.fonts
+    ? Promise.race([
+        Promise.all([document.fonts.load(`800 100px Sora`), document.fonts.load(`500 20px "Noto Sans KR"`, KOR)]),
+        new Promise(r => setTimeout(r, 2500))
+      ])
+    : Promise.resolve();
+
+  ready.then(() => {
+    setup();
+    if (!reduce) requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>
